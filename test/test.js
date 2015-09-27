@@ -248,4 +248,24 @@ describe('e2 events', function() {
 
         });
     });
+
+    describe('extend', function() {
+        it('must support prototype inheritance', function() {
+            function SomeClass() {
+
+            }
+
+            SomeClass.prototype = new E2;
+
+            var instance = new SomeClass;
+
+            instance.on(event, dummyFunction).emit(event);
+        });
+
+        it('must support object inheritance', function() {
+            var instance = Object.create(new E2);
+
+            instance.on(event, dummyFunction).emit(event);
+        });
+    });
 });
