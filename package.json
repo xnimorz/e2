@@ -4,8 +4,7 @@
   "description": "e2 (Emit-Event) is a custom event emitter. Support Node.js and browsers",
   "main": "e2.js",
   "scripts": {
-    "test": "gulp test",
-    "build": "gulp build"
+    "test": "mocha ./test/test"
   },
   "repository": {
     "type": "git",
@@ -30,6 +29,6 @@
   },
   "homepage": "https://github.com/xnimorz/e2",
   "devDependencies": {
-    "gulp": "^3.9.0"
+    "mocha": "^2.3.3"
   }
 }

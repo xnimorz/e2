@@ -127,6 +127,8 @@
             event.forEach(function(item) {
                 this.on(item, callback, options);
             }, this);
+
+            return this;
         }
 
         /**
@@ -138,6 +140,8 @@
             Object.keys(event).forEach(function(key) {
                 this.on(key, event[key], options);
             }, this);
+
+            return this;
         }
 
         if (typeof event !== 'string') {
@@ -154,7 +158,7 @@
     };
 
     E2.prototype.once = function(event, callback) {
-        this.on(event, callback, {once: true});
+        return this.on(event, callback, {once: true});
     };
 
     E2.prototype.off = function(event, callback) {
@@ -169,6 +173,8 @@
             event.forEach(function(item) {
                 this.off(item, callback);
             }, this);
+
+            return this;
         }
 
         /**
@@ -178,6 +184,8 @@
             Object.keys(event).forEach(function(key) {
                 this.off(key, event[key]);
             }, this);
+
+            return this;
         }
 
         if (!event || typeof event !== 'string') {
@@ -215,17 +223,10 @@
          */
         if (event && Array.isArray(event)) {
             event.forEach(function(item) {
-                this.off(item, callback);
+                this.emit(item, data, isAsync);
             }, this);
-        }
 
-        /**
-         * e2.emit({eventName: eventHandler}[, isAsync]);
-         */
-        if (event && typeof event === 'object') {
-            Object.keys(event).forEach(function(key) {
-                this.on(key, event[key]);
-            }, this);
+            return;
         }
 
         if (typeof event !== 'string') {
@@ -261,7 +262,7 @@
      * @param data
      */
     E2.prototype.emitAsync = function(event, data) {
-        this.emit(event, data, true);
+        return this.emit(event, data, true);
     };
 
     (function(E2) {
