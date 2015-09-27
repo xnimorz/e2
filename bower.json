@@ -1,0 +1,34 @@
+{
+  "name": "e2",
+  "main": "e2.min.js",
+  "version": "1.0.0",
+  "homepage": "https://github.com/xnimorz/e2",
+  "authors": [
+    "Nikita Mostovoy <xnimor@ya.ru>"
+  ],
+  "description": "e2 (Emit-Event) is a custom event emitter. Support Node.js and browsers",
+  "moduleType": [
+    "amd",
+    "globals",
+    "node"
+  ],
+  "keywords": [
+      "events",
+      "emitter",
+      "async events",
+      "EDP",
+      "event-driven programming",
+      "custom events",
+      "listeners",
+      "event stream",
+      "events emitter",
+      "listener"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test"
+  ]
+}
