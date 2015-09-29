@@ -208,8 +208,8 @@
             return [];
         }
 
-        return [].concat(this.__e2__.callbacks[event])
-                 .concat(this.__e2__.callbacksOnce[event])
+        return [].concat(this.__e2__.callbacks[event] || [])
+                 .concat(this.__e2__.callbacksOnce[event] || [])
                  .slice(0);
     };
 

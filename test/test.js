@@ -129,12 +129,12 @@ describe('e2 events', function() {
     describe('e2.listeners', function() {
         it('must return callbacks', function() {
             var e2 = new E2();
-            e2.on(event, dummyFunction).listeners(event)[0];
+            e2.on(event, dummyFunction).listeners(event)[0]();
         });
 
         it('must return callbacksOnce', function() {
             var e2 = new E2();
-            e2.once(event, dummyFunction).listeners(event)[0];
+            e2.once(event, dummyFunction).listeners(event)[0]();
         });
 
         it('must concate callbacks and callbacksOnce', function() {
@@ -228,6 +228,11 @@ describe('e2 events', function() {
             var e2 = new E2();
             e2.on(event, fail).off(event).emit(event);
             assert.ok('true');
+        });
+
+        it('must not call callbacks if callback released directly', function() {
+            var e2 = new E2();
+            e2.on(event, dummyFunction).on(event, fail).off(event, fail).emit(event);
         });
 
         it('must not call callbacks only for released events', function() {

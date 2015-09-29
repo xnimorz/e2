@@ -5,7 +5,7 @@
   "main": "e2.js",
   "scripts": {
     "test": "mocha ./test/test",
-    "build": "gulp build"
+    "build": "mocha ./test/test && gulp build"
   },
   "repository": {
     "type": "git",
