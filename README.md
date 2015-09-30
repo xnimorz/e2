@@ -2,7 +2,7 @@
 
 E2 is a custom event emitter for Node.js and the browser with async events supporting.
 
-e2 supporting CommonJS and AMD modules.
+E2 supporting CommonJS and AMD modules.
 
 ### Installing
 
@@ -99,18 +99,18 @@ var instance = Object.create(new E2);
 // Basic
 e2.on('event', handler);
 
-// assign handler to several events
-e2.on(['my-event', 'second-event], handler)
+// Assign handler to several events
+e2.on(['my-event', 'second-event'], handler)
 
-// once
+// Once
 e2.once('event', handler);
-//or
+// Or
 e2.on('event', handler, {once: true});
 
-//using object
+// Using object
 e2.on({
     event: eventHandler,
-    anotherEvent: anotherEventHandler
+    secondEvent: secondEventHandler
 });
 
 ```
@@ -119,18 +119,18 @@ e2.on({
 ```
 e2.emit('event-name');
 
-// with data
+// With data
 e2.emit('event-name', {foo: 'bar'});
 
-// emit several events
-e2.emit(['event-name', 'another-event']);
-e2.emit(['event-name', 'another-event'], {foo: 'bar'});
+// Emit several events
+e2.emit(['event-name', 'second-event']);
+e2.emit(['event-name', 'second-event'], {foo: 'bar'});
 
 // Emit event async
 e2.emitAsync('event-name');
 e2.emitAsync('event-name', {foo: 'bar'});
-e2.emitAsync(['event-name', 'another-event']);
-e2.emitAsync(['event-name', 'another-event'], {foo: 'bar'});
+e2.emitAsync(['event-name', 'second-event']);
+e2.emitAsync(['event-name', 'second-event'], {foo: 'bar'});
 ```
 
 #### Event data
@@ -144,9 +144,9 @@ For example:
 
 ```
 e2.on('event', function(e) {
-    console.log(e.type) //-> 'event'
-    console.log(e.target) //-> e2
-    console.log(e.data) //-> {foo: 'bar'}
+    console.log(e.type) // -> 'event'
+    console.log(e.target) // -> e2
+    console.log(e.data) // -> {foo: 'bar'}
 }.emit('event', {foo: 'bar'});
 
 ```
@@ -158,6 +158,12 @@ e2.off('event');
 
 // Remove handler from event directly
 e2.off('event', handler);
+
+// Remove all handlers from several events
+e2.off(['event', 'second-event']);
+
+// Remove handler from several events
+e2.off(['event', 'second-event'], eventHandler);
 ```
 
 ### Get event listeners

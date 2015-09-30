@@ -252,6 +252,13 @@ describe('e2 events', function() {
             }
 
         });
+
+        it('must remove all handlers from several events', function() {
+            var e2 = new E2();
+            e2.on(eventsArray, fail).off(eventsArray).emit(event);
+
+            assert.ok(e2.__e2__.callbacks[event].length === 0 && e2.__e2__.callbacks[anotherEvent].length === 0);
+        });
     });
 
     describe('extend', function() {
