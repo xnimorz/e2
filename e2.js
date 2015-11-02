@@ -1,6 +1,5 @@
 (function(global) {
     'use strict';
-
     var asyncCall = (function() {
         var list = [];
         var addFunction = function(fn) {

@@ -16,20 +16,22 @@ var fail = function() {
 
 describe('e2 events', function() {
     describe('e2.on', function () {
-        it('must assign function to event name', function () {
+        it('must assign function to event name', function (done) {
             var e2 = new E2();
-            e2.on(event, dummyFunction);
+            e2.on(event, done);
 
             e2.__e2__.callbacks[event][0]();
         });
 
-        it('must call function when event emit', function () {
+        it('must call function when event emit', function (done) {
             var e2 = new E2();
-            e2.on(event, dummyFunction);
+            e2.on(event, function() {
+                done();
+            });
             e2.emit(event);
         });
 
-        it('must not call function if event was triggered early', function () {
+        it('must not call function if event was triggered early', function (done) {
             var e2 = new E2();
             e2.emit(event);
 
@@ -37,7 +39,7 @@ describe('e2 events', function() {
                 assert.fail('called', 'not called');
             });
 
-            setTimeout(dummyFunction, 0);
+            setTimeout(done, 0);
         });
 
         it('must assign callback function to all events in array', function() {
@@ -217,9 +219,11 @@ describe('e2 events', function() {
     });
 
     describe('e2.emitAsync', function() {
-        it('must call callback async', function() {
+        it('must call callback async', function(done) {
             var e2 = new E2();
-            e2.emitAsync(event).on(event, dummyFunction);
+            e2.on(event, function() {
+                done();
+            }).emitAsync(event);
         });
     });
 
