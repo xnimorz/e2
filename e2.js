@@ -265,12 +265,12 @@
     };
 
     (function(E2) {
-        if (typeof define === 'function' && define.amd) {
-            // AMD.
-            define(E2);
-        } else if (typeof exports === 'object') {
+        if (typeof exports === 'object') {
             // CommonJS
             module.exports = E2;
+        } else if (typeof define === 'function' && define.amd) {
+            // AMD.
+            define(E2);
         } else {
             // Global scope
             global.E2 = E2;

@@ -1,6 +1,6 @@
 {
   "name": "e2",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "e2 (Emit-Event) is a custom event emitter. Support Node.js and browsers",
   "main": "e2.js",
   "scripts": {
