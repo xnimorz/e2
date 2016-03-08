@@ -24,7 +24,7 @@
     "listener"
   ],
   "author": "Nikita Mostovoy <xnimor@ya.ru>",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/xnimorz/e2/issues"
   },
