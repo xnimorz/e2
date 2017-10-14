@@ -30,8 +30,10 @@
   },
   "homepage": "https://github.com/xnimorz/e2",
   "devDependencies": {
+    "gulp": "^3.9.1",
     "gulp-rename": "^1.2.2",
     "gulp-uglify": "^1.4.1",
     "mocha": "^2.3.3"
-  }
+  },
+  "dependencies": {}
 }
