@@ -216,6 +216,23 @@ describe('e2 events', function() {
                 assert.ok(e instanceof TypeError);
             }
         })
+
+        it('must not fail if one or more handlers are unsubscribed calling emit', function() {
+            var callbacksCalled = 0;
+            function a() {e2.off('event', b).off('event', d); callbacksCalled++;}
+            function b() {callbacksCalled++;}
+            function c() {callbacksCalled++;}
+            function d() {callbacksCalled++;}
+
+            var e2 = new E2();
+            e2.on('event', a);
+            e2.on('event', b);
+            e2.on('event', c);
+            e2.on('event', d);
+
+            e2.emit('event');
+            assert.equal(callbacksCalled, 2);
+        })
     });
 
     describe('e2.emitAsync', function() {
