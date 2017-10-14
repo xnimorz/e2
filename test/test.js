@@ -231,8 +231,31 @@ describe('e2 events', function() {
             e2.on('event', d);
 
             e2.emit('event');
+            assert.equal(callbacksCalled, 4);
+            callbacksCalled = 0;
+            e2.emit('event');
             assert.equal(callbacksCalled, 2);
-        })
+        });
+
+        it('must call all callbacks if one or more handlers are unsubscribed by calling emit', function() {
+            var callbacksCalled = 0;
+            function a() {e2.off('event', a).off('event', d); callbacksCalled++;}
+            function b() {callbacksCalled++;}
+            function c() {callbacksCalled++;}
+            function d() {callbacksCalled++;}
+
+            var e2 = new E2();
+            e2.on('event', a);
+            e2.on('event', b);
+            e2.on('event', c);
+            e2.on('event', d);
+
+            e2.emit('event');
+            assert.equal(callbacksCalled, 4);
+            callbacksCalled = 0;
+            e2.emit('event');
+            assert.equal(callbacksCalled, 2);
+        });
     });
 
     describe('e2.emitAsync', function() {

@@ -93,17 +93,18 @@
         })
     }
 
-    function removeCallback(callback, list) {
+    function removeCallback(callback, callbacksList, event) {
+        var list = callbacksList[event];
         var index = list.indexOf(callback);
-        if (index !== -1) {
-            list.splice(index, 1);
+        if (index !== -1) { 
+            callbacksList[event] = list.slice(0, index).concat(list.slice(index + 1, list.length));                       
         }
     }
 
     function remove(callbacksList, event, callback) {
         if (callbacksList[event]) {
             if (callback) {
-                removeCallback(callback, callbacksList[event]);
+                removeCallback(callback, callbacksList, event);
             } else {
                 callbacksList[event] = [];
             }
