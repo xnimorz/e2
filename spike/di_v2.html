@@ -1,0 +1,886 @@
+<title>e2 DI v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #F4F5F3;
+    --surface: #FFFFFF;
+    --surface-2: #ECEEEA;
+    --line: #D6DAD4;
+    --line-strong: #B4BBB3;
+    --ink: #1A1F24;
+    --muted: #5B6570;
+    --faint: #8791A0;
+    --accent: #2544C9;
+    --accent-ink: #1B34A6;
+    --accent-soft: #E4E9FB;
+    --pass: #1E7F55;
+    --pass-soft: #DDF0E6;
+    --fail: #B8332C;
+    --fail-soft: #F8E1DF;
+    --warn: #9A6A12;
+    --warn-soft: #F6ECD3;
+    --code-bg: #1B2027;
+    --code-ink: #E4E8EE;
+    --code-line: #2A313B;
+    --code-gutter: #6B7684;
+    --kw: #8FA8FF;
+    --str: #B9E29B;
+    --typ: #7ED3D6;
+    --com: #7C8794;
+    --ys: #FFB35C;
+    --num: #F5A3A3;
+    --add: rgba(95, 207, 150, .14);
+    --del: rgba(240, 126, 118, .16);
+    --display: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif;
+    --body: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --radius: 6px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121519;
+      --surface: #191D23;
+      --surface-2: #20252C;
+      --line: #2B323B;
+      --line-strong: #3C4552;
+      --ink: #E7EAEE;
+      --muted: #9AA5B1;
+      --faint: #6F7A87;
+      --accent: #8CA2FF;
+      --accent-ink: #B3C1FF;
+      --accent-soft: #1F2A52;
+      --pass: #5FCF96;
+      --pass-soft: #12331F;
+      --fail: #F07E76;
+      --fail-soft: #3E1B19;
+      --warn: #E0B15A;
+      --warn-soft: #3A2D12;
+      --code-bg: #0D1014;
+      --code-ink: #E4E8EE;
+      --code-line: #1C2229;
+      --code-gutter: #5C6672;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121519;
+    --surface: #191D23;
+    --surface-2: #20252C;
+    --line: #2B323B;
+    --line-strong: #3C4552;
+    --ink: #E7EAEE;
+    --muted: #9AA5B1;
+    --faint: #6F7A87;
+    --accent: #8CA2FF;
+    --accent-ink: #B3C1FF;
+    --accent-soft: #1F2A52;
+    --pass: #5FCF96;
+    --pass-soft: #12331F;
+    --fail: #F07E76;
+    --fail-soft: #3E1B19;
+    --warn: #E0B15A;
+    --warn-soft: #3A2D12;
+    --code-bg: #0D1014;
+    --code-ink: #E4E8EE;
+    --code-line: #1C2229;
+    --code-gutter: #5C6672;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  code, kbd, pre { font-family: var(--mono); }
+  p code, li code, td code, dd code, h2 code, h3 code, .lede code {
+    font-size: .86em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    white-space: nowrap;
+  }
+  h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(34px, 5vw, 56px); font-weight: 700; line-height: 1.02; letter-spacing: -.02em; }
+  h2 { font-size: clamp(26px, 3.2vw, 34px); font-weight: 600; line-height: 1.12; letter-spacing: -.015em; }
+  h3 { font-size: 20px; font-weight: 600; line-height: 1.25; }
+  p { margin: 0; }
+  .page { max-width: 1120px; margin: 0 auto; padding: 0 24px 96px; }
+  .prose { max-width: 68ch; display: grid; gap: 14px; }
+  .prose ul, .prose ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
+  .prose li::marker { color: var(--muted); }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--muted);
+  }
+  .eyebrow .idx { color: var(--accent); }
+  .y { color: var(--accent); font-weight: 600; font-family: var(--mono); font-style: normal; }
+
+  /* masthead */
+  .masthead {
+    padding: 56px 0 28px;
+    display: grid;
+    gap: 22px;
+    border-bottom: 1px solid var(--line);
+  }
+  .masthead .lede { font-size: 20px; line-height: 1.45; max-width: 64ch; color: var(--ink); }
+  .masthead .lede em { font-style: italic; }
+  .status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .chip .k { color: var(--muted); }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pass); }
+  .chip.verdict { border-color: var(--pass); background: var(--pass-soft); color: var(--pass); font-weight: 600; }
+  .chip.verdict .dot { background: var(--pass); }
+
+  nav.toc {
+    position: sticky; top: 0; z-index: 2;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    margin: 0 -24px 0;
+    padding: 0 24px;
+    overflow-x: auto;
+  }
+  nav.toc ol {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; gap: 22px; white-space: nowrap;
+    font-family: var(--mono); font-size: 12.5px; letter-spacing: .02em;
+  }
+  nav.toc a { display: inline-block; padding: 12px 0; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+  nav.toc a:hover { color: var(--ink); border-color: var(--line-strong); }
+
+  section { padding: 56px 0 8px; display: grid; gap: 22px; }
+  section + section { border-top: 1px solid var(--line); margin-top: 40px; }
+  .head { display: grid; gap: 10px; max-width: 72ch; }
+
+  /* code */
+  pre.code {
+    margin: 0;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.25px;
+    line-height: 1.6;
+    tab-size: 2;
+  }
+  pre.code code { font-size: inherit; }
+  pre.code .k { color: var(--kw); }
+  pre.code .s { color: var(--str); }
+  pre.code .t { color: var(--typ); }
+  pre.code .c { color: var(--com); font-style: italic; }
+  pre.code .n { color: var(--num); }
+  pre.code .y { color: var(--ys); font-weight: 600; }
+  pre.code .line { display: block; padding: 0 12px; margin: 0 -12px; }
+  pre.code .line.del { background: var(--del); }
+  pre.code .line.add { background: var(--add); }
+  pre.code .line::before { display: inline-block; width: 1.4em; color: var(--code-gutter); content: " "; }
+  pre.code .line.del::before { content: "−"; color: #F07E76; }
+  pre.code .line.add::before { content: "+"; color: #5FCF96; }
+  .caption {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted);
+    display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  }
+  .caption .lbl { text-transform: uppercase; letter-spacing: .1em; font-size: 11px; }
+  .caption code { font-size: 12.5px; background: none; border: 0; padding: 0; color: var(--ink); white-space: normal; }
+  .figure { display: grid; gap: 10px; }
+
+  .plate { display: grid; gap: 18px; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .compare .figure > .caption:first-child { min-height: 34px; align-items: center; }
+  @media (max-width: 860px) { .compare { grid-template-columns: 1fr; } }
+
+  /* tables */
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  th, td { text-align: left; padding: 10px 14px; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 500; background: var(--surface-2); }
+  tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+  .num { font-variant-numeric: tabular-nums; }
+  .gone { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--fail); text-decoration-thickness: 1.5px; }
+  .new { color: var(--pass); font-weight: 600; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin-left: 8px; }
+  .kept { color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin-left: 8px; }
+
+  /* surface columns */
+  .surface { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .surface { grid-template-columns: 1fr; } }
+  .col { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+  .col h3 { padding: 12px 16px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 500; background: var(--surface-2); display: flex; justify-content: space-between; }
+  .col ul { list-style: none; margin: 0; padding: 8px 0; }
+  .col li { padding: 7px 16px; font-family: var(--mono); font-size: 13.5px; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .col li .why { font-family: var(--body); font-size: 14px; color: var(--muted); text-align: right; }
+  .col li + li { border-top: 1px dashed var(--line); }
+  .col.after { border-color: var(--line-strong); }
+
+  /* flow */
+  .flow { display: grid; gap: 12px; }
+  .flow .row { display: grid; grid-template-columns: 92px 1fr; gap: 14px; align-items: center; }
+  .flow .who { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .flow .steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .flow .step { padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font-family: var(--mono); font-size: 13px; }
+  .flow .step.hot { border-color: var(--fail); background: var(--fail-soft); color: var(--fail); }
+  .flow .step.ok { border-color: var(--pass); background: var(--pass-soft); color: var(--pass); }
+  .flow .arrow { color: var(--faint); font-family: var(--mono); }
+  .flow .note { font-size: 14px; color: var(--muted); font-family: var(--body); }
+
+  /* diagnostics */
+  .diag { display: grid; gap: 14px; }
+  .diagnostic { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .diagnostic header { display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); font-size: 14.5px; }
+  .diagnostic header .code { font-family: var(--mono); font-size: 11.5px; padding: 2px 7px; border-radius: 4px; background: var(--fail-soft); color: var(--fail); font-weight: 600; letter-spacing: .04em; }
+  .diagnostic header .same { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--pass); margin-left: auto; }
+  .diagnostic header .newtag { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-left: auto; }
+  .diagnostic pre { margin: 0; padding: 14px 16px; font-size: 12.75px; line-height: 1.55; overflow-x: auto; color: var(--ink); background: var(--surface); }
+  .diagnostic pre .hi { color: var(--fail); font-weight: 600; }
+  .diagnostic pre .dim { color: var(--faint); }
+
+  /* svg figures */
+  figure.svg { margin: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 16px 12px 8px; overflow-x: auto; }
+  figure.svg svg { display: block; width: 100%; height: auto; min-width: 720px; font-family: var(--mono); }
+  figure.svg .lbl { font-size: 12px; fill: var(--ink); }
+  figure.svg .sub { font-size: 11px; fill: var(--muted); }
+  figure.svg .axis { stroke: var(--line-strong); stroke-width: 1; }
+  figure.svg .tick { stroke: var(--line-strong); stroke-width: 1; }
+  figure.svg .bar { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1; }
+  figure.svg .bar.acc { fill: var(--accent-soft); stroke: var(--accent); }
+  figure.svg .bar.pass { fill: var(--pass-soft); stroke: var(--pass); }
+  figure.svg .bar.warn { fill: var(--warn-soft); stroke: var(--warn); }
+  figure.svg .edge { stroke: var(--ink); stroke-width: 1.25; fill: none; }
+  figure.svg .edge.fail { stroke: var(--fail); }
+  figure.svg .edge.acc { stroke: var(--accent); }
+  figure.svg .node { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1; }
+  figure.svg .node.acc { fill: var(--accent-soft); stroke: var(--accent); }
+  figure.svg .node.pass { fill: var(--pass-soft); stroke: var(--pass); }
+  figure.svg .nodelbl { font-size: 13px; font-weight: 600; fill: var(--ink); text-anchor: middle; }
+  figure.svg .edgelbl { font-size: 11px; fill: var(--muted); }
+  figure.svg .edgelbl.fail { fill: var(--fail); }
+  figure.svg .edgelbl.acc { fill: var(--accent-ink); }
+  figure.svg .arrowhead { fill: var(--ink); }
+  figure.svg .arrowhead.fail { fill: var(--fail); }
+  figure.svg .arrowhead.acc { fill: var(--accent); }
+  figcaption { font-size: 14px; color: var(--muted); padding: 10px 6px 4px; }
+
+  /* callouts */
+  .callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; color: var(--ink); max-width: 68ch; }
+  .callout.honest { border-color: var(--warn); }
+  .callout .t { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); display: block; margin-bottom: 4px; }
+
+  /* tradeoffs */
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .to { border-top: 2px solid var(--line-strong); padding-top: 10px; display: grid; gap: 6px; }
+  .to h4 { font-family: var(--display); font-size: 17px; font-weight: 600; }
+  .to p { font-size: 15px; color: var(--muted); }
+
+  /* migration steps */
+  ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: step; max-width: 72ch; }
+  ol.steps li { display: grid; grid-template-columns: 44px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); counter-increment: step; align-items: baseline; }
+  ol.steps li::before { content: counter(step, decimal-leading-zero); font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 600; }
+  ol.steps li b { font-family: var(--display); font-weight: 600; }
+  ol.steps li span { color: var(--muted); font-size: 15.5px; }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 18px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    nav.toc a { transition: color .15s ease, border-color .15s ease; }
+  }
+</style>
+
+<main class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">e2 · design review · implemented in src/ · 2026-09-06</div>
+    <h1>Dependency injection without <code style="font-family:var(--mono);font-weight:600;font-size:.82em;letter-spacing:0">provider</code></h1>
+    <p class="lede">The explicit dependency tuple on <code>provider(Target, [deps], body)</code> exists for one reason: the runtime sorted the graph before building anything. Build on demand instead and the tuple, positional injection, <code>Plan</code>, and the eight-level "undeclared dependency" diagnostic all go, while the flat list and the missing-service message stay byte-for-byte. Lazy initialisation costs one primitive, <code>memo</code>, plus a root-level <code>lazy()</code> for services that should not be built at boot, and no runtime mode.</p>
+    <div class="status">
+      <span class="chip verdict"><span class="dot"></span>Implemented</span>
+      <span class="chip"><span class="dot"></span><span class="k">tsc 5.9.3</span> spike and src/ pass</span>
+      <span class="chip"><span class="dot"></span><span class="k">bun run check</span> 288 tests green</span>
+      <span class="chip"><span class="dot"></span><span class="k">prototype/e2</span> ported · 27/27</span>
+      <span class="chip"><span class="k">surface</span> 12 names → 8</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Sections">
+    <ol>
+      <li><a href="#finding">Finding</a></li>
+      <li><a href="#surface">Surface</a></li>
+      <li><a href="#prototype">Prototype</a></li>
+      <li><a href="#lazy">Lazy init</a></li>
+      <li><a href="#runtime">Runtime</a></li>
+      <li><a href="#diagnostics">Diagnostics</a></li>
+      <li><a href="#migration">Migration</a></li>
+      <li><a href="#tradeoffs">Trade-offs</a></li>
+      <li><a href="#decision">Decision</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================================================ -->
+  <section id="finding">
+    <div class="head">
+      <div class="eyebrow">Finding</div>
+      <h2>The tuple only ever served the sort</h2>
+    </div>
+    <div class="prose">
+      <p>Today a provider declares <code>[Config, Logger]</code> and receives them positionally. That tuple drives two things: the type-level <code>Needs</code>, and <code>Plan.from</code>, which runs Kahn's algorithm over the whole list before any constructor runs. The type level never needed it. <code>gen</code> already infers a body's dependencies from what it <b class="y">yield*</b>s, and a provider body can be inferred the same way.</p>
+      <p>So the change is one decision: <strong>build services on first demand, memoised in the runtime, instead of in a pre-computed order.</strong> A <b class="y">yield*</b> <code>Db</code> inside a provider body builds <code>Db</code> on the spot if it is not built yet. Cycles and missing providers still surface at startup, because the runtime demands every provider in list order.</p>
+    </div>
+    <div class="plate">
+      <div class="flow">
+        <div class="row">
+          <div class="who">Today</div>
+          <div class="steps">
+            <span class="step">flat list</span><span class="arrow">→</span>
+            <span class="step hot">Plan.from sorts</span><span class="arrow">→</span>
+            <span class="step">build in order</span>
+            <span class="note">The sort needs every edge up front, so every provider writes its edges by hand, twice.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="who">Proposed</div>
+          <div class="steps">
+            <span class="step">flat list</span><span class="arrow">→</span>
+            <span class="step">demand each, in order</span><span class="arrow">→</span>
+            <span class="step ok"><b class="y" style="color:inherit">yield*</b> builds on the spot</span>
+            <span class="note">Edges are discovered by running. <code>Needs</code> is inferred, and nothing can drift from it.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="prose">
+      <p>Everything downstream falls out of machinery that already exists. <code>Check</code>, <code>MissingServices</code>, the unordered list, "every service named once" and the diagnostic e2 exists for are all unchanged.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="surface">
+    <div class="head">
+      <div class="eyebrow">Surface</div>
+      <h2>The whole of DI, after</h2>
+    </div>
+    <div class="surface">
+      <div class="col">
+        <h3><span>Today</span><span>12 names</span></h3>
+        <ul>
+          <li><span>service</span><span class="kept">kept</span></li>
+          <li><span class="gone">Service.make</span><span class="why">duplicate of service</span></li>
+          <li><span class="gone">provider</span><span class="why">the tuple form</span></li>
+          <li><span class="gone">provider.of</span><span class="why">→ Db.of</span></li>
+          <li><span class="gone">provider.sync</span><span class="why">→ Db.make</span></li>
+          <li><span class="gone">Provider.make / .of / .sync</span><span class="why">same three, as statics</span></li>
+          <li><span class="gone">Plan</span><span class="why">no sort, no plan</span></li>
+          <li><span class="gone">Runtime.make</span><span class="why">duplicate of runtime</span></li>
+          <li><span>run</span><span class="kept">kept</span></li>
+          <li><span>runtime</span><span class="kept">kept, gains a check</span></li>
+        </ul>
+      </div>
+      <div class="col after">
+        <h3><span>Proposed</span><span>8 names</span></h3>
+        <ul>
+          <li><span>service&lt;Api&gt;()('Name')</span><span class="why">a contract and its key</span></li>
+          <li><span>service('Name', function* () {})<span class="new">new</span></span><span class="why">the same, carrying a default</span></li>
+          <li><span>Db.make(function* () {})<span class="new">new</span></span><span class="why">an implementation; deps inferred</span></li>
+          <li><span>Db.of(value)<span class="new">new</span></span><span class="why">already built: config, a double</span></li>
+          <li><span>memo(fx)<span class="new">new</span></span><span class="why">run once, on first use</span></li>
+          <li><span>memo(Service)</span><span class="why">the same, over a key: resolve on first use</span></li>
+          <li><span>lazy(provider)<span class="new">new</span></span><span class="why">at the root: not built at startup</span></li>
+          <li><span>run(effect, providers)</span><span class="why">unchanged</span></li>
+          <li><span>runtime(providers)</span><span class="why">now rejects an open list</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="prose">
+      <p>Two conventions carry the rest, and neither is API. First, <code>interface Db</code> and <code>const Db</code> live in the same file: type <code>Db</code> is the contract, value <code>Db</code> is the key, <b class="y">yield*</b> <code>Db</code> gives a <code>Db</code>, and helpers take <code>(db: Db)</code>. Measured in the prototype, <code>type Db = typeof Db</code> is never referenced and the <code>…Api</code> names are used only as parameter types, which is exactly what the interface now is.</p>
+      <p>Second, implementation-first for leaves whose shape <em>is</em> the value, and contract-first for anything with more than a couple of methods so hovers say <code>Mps</code> rather than a structural type.</p>
+    </div>
+    <div class="compare">
+      <div class="figure">
+        <div class="caption"><span class="lbl">Contract-first</span><code>services/mps.ts</code></div>
+<pre class="code"><code><span class="k">export interface</span> <span class="t">Mps</span> {
+  <span class="k">readonly</span> ingest: (inbound: <span class="t">Inbound</span>) =&gt; <span class="t">Fx</span>&lt;<span class="k">readonly</span> <span class="t">Message</span>[], <span class="t">DomainError</span>&gt;
+  <span class="k">readonly</span> describe: () =&gt; { <span class="k">readonly</span> pre: <span class="k">readonly</span> <span class="t">string</span>[] }
+}
+<span class="k">export const</span> Mps = service&lt;<span class="t">Mps</span>&gt;()(<span class="s">'Mps'</span>)
+
+<span class="k">export const</span> MpsLive = Mps.make(<span class="k">function*</span> () {
+  <span class="k">const</span> local     = <span class="y">yield*</span> LocalStore
+  <span class="k">const</span> preStages = <span class="y">yield*</span> PreStages
+  <span class="k">return</span> { ingest: (inbound) =&gt; gen(<span class="k">function*</span> () { <span class="c">/* … */</span> }), describe: () =&gt; ({ pre: preStages.map(s =&gt; s.name) }) }
+})</code></pre>
+        <div class="caption"><span class="lbl">Inferred</span><code>Provider&lt;'Mps', 'LocalStore' | 'MPS/PreStages', never&gt;</code></div>
+      </div>
+      <div class="figure">
+        <div class="caption"><span class="lbl">Implementation-first</span><code>services/config.ts</code></div>
+<pre class="code"><code><span class="k">export const</span> Config = service(<span class="s">'Config'</span>, <span class="k">function*</span> () {
+  <span class="k">return</span> {
+    deviceId:  <span class="s">'device-main'</span>,
+    userId:    <span class="s">'user-me'</span>,
+    pageSize:  <span class="n">50</span>,
+    mediaRoot: <span class="s">'/media'</span>,
+  }
+})
+<span class="k">export type</span> <span class="t">Config</span> = <span class="t">ApiOf</span>&lt;<span class="k">typeof</span> Config&gt;
+
+<span class="c">// A defaulted service is both a key and a provider.</span>
+<span class="c">// It goes into runtime([...]) as itself; Config.of({...})</span>
+<span class="c">// is how a test overrides it.</span></code></pre>
+        <div class="caption"><span class="lbl">Inferred</span><code>Defaulted&lt;'Config', { deviceId: string; … }, never, never&gt;</code></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="prototype">
+    <div class="head">
+      <div class="eyebrow">Prototype</div>
+      <h2><code>send.ts</code>, before and after</h2>
+    </div>
+    <div class="compare">
+      <div class="figure">
+        <div class="caption"><span class="lbl">Before</span><code>prototype/e2/src/services/send.ts</code></div>
+<pre class="code"><code><span class="line"><span class="k">export interface</span> <span class="t">SendApi</span> {</span>
+<span class="line">  <span class="k">readonly</span> send: (threadId: <span class="t">string</span>, payload: <span class="t">Payload</span>) =&gt; <span class="t">Fx</span>&lt;<span class="k">readonly</span> <span class="t">Message</span>[], <span class="t">SendError</span>&gt;</span>
+<span class="line">}</span>
+<span class="line"><span class="k">export const</span> Send = service&lt;<span class="t">SendApi</span>&gt;()(<span class="s">'Send'</span>)</span>
+<span class="line del"><span class="k">export type</span> <span class="t">Send</span> = <span class="k">typeof</span> Send</span>
+<span class="line"></span>
+<span class="line del"><span class="k">export const</span> SendLive = provider(</span>
+<span class="line del">  Send,</span>
+<span class="line del">  [Config, Crypto, Network, Mps],</span>
+<span class="line del">  <span class="k">function*</span> (config, crypto, network, mps) {</span>
+<span class="line">    <span class="k">let</span> counter = <span class="n">0</span></span>
+<span class="line">    <span class="k">return</span> {</span>
+<span class="line">      send: (threadId, payload) =&gt;</span>
+<span class="line">        gen(<span class="k">function*</span> () {</span>
+<span class="line">          counter += <span class="n">1</span></span>
+<span class="line">          <span class="k">const</span> inbound: <span class="t">Inbound</span> = { id: <span class="s">'local-'</span> + counter, threadId, authorId: config.userId, sentAt: Date.now(), payload }</span>
+<span class="line">          <span class="k">const</span> envelope = <span class="y">yield*</span> crypto.seal(inbound)</span>
+<span class="line">          <span class="y">yield*</span> network.send(envelope)</span>
+<span class="line">          <span class="k">return</span> <span class="y">yield*</span> mps.ingest(inbound)</span>
+<span class="line">        }),</span>
+<span class="line">    }</span>
+<span class="line del">  }</span>
+<span class="line del">)</span></code></pre>
+        <div class="caption"><span class="lbl">Declared</span><code>Provider&lt;'Send', 'Config' | 'Crypto' | 'Network' | 'Mps', never&gt;</code></div>
+      </div>
+      <div class="figure">
+        <div class="caption"><span class="lbl">After</span><code>same file, proposed API</code></div>
+<pre class="code"><code><span class="line"><span class="k">export interface</span> <span class="t">Send</span> {</span>
+<span class="line">  <span class="k">readonly</span> send: (threadId: <span class="t">string</span>, payload: <span class="t">Payload</span>) =&gt; <span class="t">Fx</span>&lt;<span class="k">readonly</span> <span class="t">Message</span>[], <span class="t">DomainError</span>&gt;</span>
+<span class="line">}</span>
+<span class="line"><span class="k">export const</span> Send = service&lt;<span class="t">Send</span>&gt;()(<span class="s">'Send'</span>)</span>
+<span class="line"></span>
+<span class="line add"><span class="k">export const</span> SendLive = Send.make(<span class="k">function*</span> () {</span>
+<span class="line add">  <span class="k">const</span> config  = <span class="y">yield*</span> Config</span>
+<span class="line add">  <span class="k">const</span> crypto  = <span class="y">yield*</span> Crypto</span>
+<span class="line add">  <span class="k">const</span> network = <span class="y">yield*</span> Network</span>
+<span class="line add">  <span class="k">const</span> mps     = <span class="y">yield*</span> Mps</span>
+<span class="line">  <span class="k">let</span> counter = <span class="n">0</span></span>
+<span class="line">  <span class="k">return</span> {</span>
+<span class="line">    send: (threadId, payload) =&gt;</span>
+<span class="line">      gen(<span class="k">function*</span> () {</span>
+<span class="line">        counter += <span class="n">1</span></span>
+<span class="line">        <span class="k">const</span> inbound: <span class="t">Inbound</span> = { id: <span class="s">'local-'</span> + counter, threadId, authorId: config.userId, sentAt: Date.now(), payload }</span>
+<span class="line">        <span class="k">const</span> envelope = <span class="y">yield*</span> crypto.seal(inbound)</span>
+<span class="line">        <span class="y">yield*</span> network.send(envelope)</span>
+<span class="line">        <span class="k">return</span> <span class="y">yield*</span> mps.ingest(inbound)</span>
+<span class="line">      }),</span>
+<span class="line">  }</span>
+<span class="line add">})</span></code></pre>
+        <div class="caption"><span class="lbl">Inferred</span><code>Provider&lt;'Send', 'Config' | 'Crypto' | 'Network' | 'Mps', never&gt;</code></div>
+      </div>
+    </div>
+    <div class="callout honest">
+      <span class="t">Honest accounting</span>
+      The line count does not go down. Four <b class="y">yield*</b> lines replace one tuple line, exactly as in the Effect version. What goes away is the triple bookkeeping between tuple, parameter list and body, two ceremony lines per service, and one concept. What arrives is the ability to put a dependency on a single method of a contract.
+    </div>
+    <div class="prose">
+      <p>A contract can say, per method, what is needed at call time. A method that <b class="y">yield*</b>s a service does not make it a construction dependency, so the requirement flows to exactly the programs that take that path.</p>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">Call-time dependency</span><code>spike CASE 4</code></div>
+<pre class="code"><code><span class="k">interface</span> <span class="t">Mps</span> {
+  loadLocal(id: <span class="t">string</span>):  <span class="t">Fx</span>&lt;<span class="t">User</span>, <span class="t">DbError</span>&gt;
+  loadRemote(id: <span class="t">string</span>): <span class="t">Fx</span>&lt;<span class="t">User</span>, <span class="t">DbError</span>, <span class="s">'ServerFetch'</span>&gt;   <span class="c">// only this path needs the server</span>
+}
+
+<span class="k">const</span> MpsLive = Mps.make(<span class="k">function*</span> () {
+  <span class="k">const</span> db = <span class="y">yield*</span> Db
+  <span class="k">return</span> {
+    loadLocal:  (id) =&gt; db.query(id),
+    loadRemote: (id) =&gt; gen(<span class="k">function*</span> () { <span class="k">const</span> server = <span class="y">yield*</span> ServerFetch; <span class="k">return</span> <span class="y">yield*</span> server.fetchOne(id) }),
+  }
+})
+<span class="c">// MpsLive : Provider&lt;'Mps', 'Db', never&gt;               ServerFetch is not a construction dependency</span>
+<span class="c">// local   : Fx&lt;User, DbError, 'Mps'&gt;                    runs against a list with no ServerFetch at all</span>
+<span class="c">// remote  : Fx&lt;User, DbError, 'Mps' | 'ServerFetch'&gt;    and this one does not</span></code></pre>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">Composition root</span><code>worker/main.ts, flat and unordered</code></div>
+<pre class="code"><code><span class="k">const</span> rt = <span class="k">await</span> runtime([
+  Config,
+  NetworkLive,          <span class="c">// connect at startup: this is a messaging client</span>
+  LocalStoreLive,       <span class="c">// constructed at startup; opens IndexedDB on first read (memo inside)</span>
+  CoreValidationLive, SearchIndexLive, SearchStageLive, PreStagesLive, PostStagesLive,
+  lazy(CryptoLive),     <span class="c">// ratchet set up on first seal or open</span>
+  lazy(MpsLive),        <span class="c">// built by the first read, send or receive, whichever comes first</span>
+  lazy(SendLive),       <span class="c">// nothing until the user sends</span>
+])
+<span class="c">// Runtime&lt;'Config' | 'LocalStore' | 'Crypto' | 'Network' | 'CoreValidation' | 'SearchIndex' | 'SearchStage' | 'MPS/PreStages' | 'MPS/PostStages' | 'Mps' | 'Send'&gt;</span>
+
+<span class="c">// Drop SearchIndexLive and the list itself says which:</span>
+<span class="c">//   typeof forgot  ===  'e2: missing service SearchIndex'</span></code></pre>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="lazy">
+    <div class="head">
+      <div class="eyebrow">Lazy initialisation</div>
+      <h2>Once, on first read, with nothing waiting at startup</h2>
+    </div>
+    <div class="prose">
+      <p>The case that decides how many laziness knobs exist: MPS reads from a local store backed by IndexedDB. Opening it is asynchronous, must happen once, nothing should wait for it at startup, the first read should wait, and later reads should find it open. MPS must not know.</p>
+      <p>Two mechanisms already cover "once". A provider body is an <code>Fx</code>, so an asynchronous open is already expressible as construction, and the runtime memoises every provider. The only thing missing is moving the <em>sync point</em> from construction to first use without leaking that into MPS's contract. That is one primitive.</p>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">Signature</span><code>memo</code></div>
+<pre class="code"><code><span class="k">declare function</span> memo&lt;<span class="t">Value</span>, <span class="t">Error</span>, <span class="t">Dependency</span> <span class="k">extends</span> <span class="t">string</span>&gt;(
+  effect: <span class="t">Fx</span>&lt;<span class="t">Value</span>, <span class="t">Error</span>, <span class="t">Dependency</span>&gt;,
+  options?: { <span class="k">readonly</span> eager?: <span class="t">boolean</span> }
+): <span class="t">Fx</span>&lt;<span class="t">Fx</span>&lt;<span class="t">Value</span>, <span class="t">Error</span>&gt;, <span class="k">never</span>, <span class="t">Dependency</span>&gt;
+<span class="c">//  └─ the handle: dependency-free, because Dependency was recorded here, when memo was yielded</span></code></pre>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">The scenario</span><code>services/local_store.ts on IndexedDB</code></div>
+<pre class="code"><code><span class="k">export const</span> LocalStoreLive = LocalStore.make(<span class="k">function*</span> () {
+  <span class="k">const</span> config = <span class="y">yield*</span> Config
+  <span class="c">// Opened once, on the first read, closed with the runtime.</span>
+  <span class="k">const</span> db = <span class="y">yield*</span> memo(
+    acquire(
+      () =&gt; openMessages(<span class="s">'messages-'</span> + config.userId),
+      (store) =&gt; store.close(),
+      (reason) =&gt; <span class="k">new</span> <span class="t">IdbError</span>(reason)
+    )
+  )
+  <span class="k">return</span> {
+    get: (id) =&gt; gen(<span class="k">function*</span> () {
+      <span class="k">const</span> store = <span class="y">yield*</span> db                           <span class="c">// the read is the sync point</span>
+      <span class="k">return</span> <span class="y">yield*</span> fromPromise(() =&gt; store.get(id), (reason) =&gt; <span class="k">new</span> <span class="t">IdbError</span>(reason))
+    }),
+  }
+})
+<span class="c">// LocalStoreLive : Provider&lt;'LocalStore', 'Config', never&gt;     construction cannot fail</span>
+<span class="c">// LocalStore.get : Fx&lt;Message | undefined, IdbError&gt;           the open's failure belongs to the read</span></code></pre>
+    </div>
+
+    <figure class="svg">
+      <svg viewBox="0 0 960 236" role="img" aria-label="Timeline: construction at startup, the first read opening IndexedDB once while a concurrent read joins, a later read hitting the open store, and close at teardown">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <!-- lanes -->
+        <text x="16" y="52" class="sub">startup</text>
+        <text x="16" y="112" class="sub">reads</text>
+        <text x="16" y="172" class="sub">memo cell</text>
+        <line x1="90" y1="60" x2="944" y2="60" class="axis" stroke-dasharray="2 4"/>
+        <line x1="90" y1="120" x2="944" y2="120" class="axis" stroke-dasharray="2 4"/>
+        <line x1="90" y1="180" x2="944" y2="180" class="axis" stroke-dasharray="2 4"/>
+        <!-- startup: constructions -->
+        <rect x="96" y="40" width="54" height="24" rx="3" class="bar"/><text x="123" y="56" class="lbl" text-anchor="middle">Config</text>
+        <rect x="154" y="40" width="88" height="24" rx="3" class="bar"/><text x="198" y="56" class="lbl" text-anchor="middle">LocalStore</text>
+        <rect x="246" y="40" width="44" height="24" rx="3" class="bar"/><text x="268" y="56" class="lbl" text-anchor="middle">Mps</text>
+        <text x="96" y="84" class="sub">runtime([…]) — LocalStore constructs synchronously; IndexedDB is not touched</text>
+        <!-- reads -->
+        <rect x="380" y="100" width="180" height="24" rx="3" class="bar warn"/><text x="470" y="116" class="lbl" text-anchor="middle">first get() waits</text>
+        <rect x="440" y="130" width="120" height="20" rx="3" class="bar warn"/><text x="500" y="144" class="sub" text-anchor="middle">second get() joins</text>
+        <rect x="640" y="100" width="34" height="24" rx="3" class="bar pass"/><text x="657" y="116" class="lbl" text-anchor="middle">get()</text>
+        <text x="682" y="116" class="sub">open already, returns at once</text>
+        <!-- memo cell -->
+        <rect x="380" y="160" width="180" height="24" rx="3" class="bar acc"/><text x="470" y="176" class="lbl" text-anchor="middle">open IndexedDB — once</text>
+        <line x1="380" y1="124" x2="380" y2="160" class="edge acc" marker-end="url(#ah)"/>
+        <line x1="440" y1="150" x2="440" y2="160" class="edge acc" marker-end="url(#ah)"/>
+        <text x="566" y="176" class="sub">done → value shared by every joiner</text>
+        <!-- teardown -->
+        <line x1="880" y1="36" x2="880" y2="200" class="tick"/>
+        <rect x="856" y="160" width="80" height="24" rx="3" class="bar"/><text x="896" y="176" class="lbl" text-anchor="middle">close()</text>
+        <text x="868" y="216" class="sub">rt.close() — finalizer registered on the runtime scope, not the request's</text>
+        <text x="380" y="216" class="sub">a caller interrupted while waiting stops waiting; the open continues for the others</text>
+      </svg>
+      <figcaption>The read is the sync point. Construction stays synchronous and cheap; the cell runs the open on a fiber rooted in the scope it was created in.</figcaption>
+    </figure>
+
+    <div class="prose">
+      <ul>
+        <li><strong>Yielding <code>memo(fx)</code> does not run <code>fx</code>.</strong> It records <code>fx</code>'s requirements against the enclosing body, captures the current service map and scope, and returns a dependency-free handle.</li>
+        <li><strong>Yielding the handle runs <code>fx</code> on first demand</strong> and joins every concurrent demand to that one run. Later demands get the value.</li>
+        <li><strong>The run happens against the captured scope</strong>, so the <code>acquire</code> close registers on the runtime scope. A caller interrupted while waiting stops waiting and does not cancel a shared open.</li>
+        <li><strong>Failure is not cached.</strong> Joiners receive it, the cell resets, the next read retries. Backoff is composition: <code>memo(retry(policy)(open))</code>.</li>
+        <li><strong><code>{ eager: true }</code></strong> starts the run in the background at construction. Reads arriving before it settles wait; reads after do not.</li>
+        <li><strong>Outside a provider it captures the request.</strong> <code>memo(db.query(id))</code> is one query per request however often the handle is yielded.</li>
+      </ul>
+    </div>
+    <h3>Send: a dependency needed only after the wire</h3>
+    <div class="prose">
+      <p><code>send</code> seals, transmits, then persists. MPS is needed only for the last step, and at the moment a send happens it may be unbuilt, or halfway through construction because <code>Receive</code> is building it. A service key is an <code>Fx</code>, so <code>memo</code> applies to it unchanged: the consumer says "later" in one line, and the resolution happens exactly where the code reaches for it.</p>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">Deferred dependency</span><code>services/send.ts</code></div>
+<pre class="code"><code><span class="k">export const</span> SendLive = Send.make(<span class="k">function*</span> () {
+  <span class="k">const</span> config  = <span class="y">yield*</span> Config
+  <span class="k">const</span> crypto  = <span class="y">yield*</span> Crypto
+  <span class="k">const</span> network = <span class="y">yield*</span> Network
+  <span class="k">const</span> lazyMps = <span class="y">yield*</span> memo(Mps)          <span class="c">// recorded in Needs now; resolved later</span>
+  <span class="k">let</span> counter = <span class="n">0</span>
+  <span class="k">return</span> {
+    send: (threadId, payload) =&gt; gen(<span class="k">function*</span> () {
+      <span class="k">const</span> envelope = <span class="y">yield*</span> crypto.seal(inbound)
+      <span class="y">yield*</span> network.send(envelope)
+      <span class="k">const</span> mps = <span class="y">yield*</span> lazyMps              <span class="c">// empty → builds it · inflight → joins · done → returns it</span>
+      <span class="k">return</span> <span class="y">yield*</span> mps.ingest(inbound)
+    }),
+  }
+})
+<span class="c">// SendLive  : Provider&lt;'Send', 'Config' | 'Crypto' | 'Network' | 'Mps', never&gt;   the list is still checked</span>
+<span class="c">// Send.send : Fx&lt;readonly Message[], DomainError&gt;                                the contract is untouched</span></code></pre>
+    </div>
+    <div class="plate">
+      <div class="flow">
+        <div class="row">
+          <div class="who">at <code style="font-size:11px">yield* lazyMps</code></div>
+          <div class="steps">
+            <span class="step">cell empty</span><span class="arrow">→</span><span class="step ok">Send's fiber builds Mps now</span>
+            <span class="note">LocalStore, PreStages and the rest are cheap; IndexedDB opens on the first <code>put</code> inside <code>ingest</code>.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="who"></div>
+          <div class="steps">
+            <span class="step">cell inflight</span><span class="arrow">→</span><span class="step ok">Send joins Receive's build</span>
+            <span class="note">One construction, two waiters. No race, no second instance.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="who"></div>
+          <div class="steps">
+            <span class="step">cell done</span><span class="arrow">→</span><span class="step ok">returns at once</span>
+            <span class="note">Every send after the first pays nothing.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="t">Consequence for the surface</span>
+      No lazy <em>mode</em> on <code>runtime</code>: construction stays eager and in list order by default, which is what makes a bad graph fail at startup. Two ways to opt out, both the same cell. <code>lazy(provider)</code> at the composition root keeps a service out of the warm-up entirely, at the explicit price that its construction failure reaches the first demander as a defect. <code>memo(Service)</code> in a consumer defers that consumer's lookup without touching its contract. Whatever is expensive inside a service stays behind <code>memo</code>, at the granularity of the resource.
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="runtime">
+    <div class="head">
+      <div class="eyebrow">Runtime</div>
+      <h2>One cell for providers and for <code>memo</code></h2>
+    </div>
+    <div class="prose">
+      <p>The runtime memoises providers with the same cell <code>memo</code> uses. <code>resolve(name)</code> is the cell for that name; <code>memo</code> is an anonymous one. One implementation, so construction and lazy init cannot disagree about joining, failure, interruption or teardown.</p>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 232" role="img" aria-label="State machine of a cell: empty to inflight on first demand, inflight to done on success, inflight back to empty on failure, self-loops for join and value">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+          <marker id="ahf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead fail"/></marker>
+          <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead acc"/></marker>
+        </defs>
+        <!-- nodes -->
+        <rect x="60" y="84" width="180" height="56" rx="6" class="node"/><text x="150" y="117" class="nodelbl">empty</text>
+        <rect x="390" y="84" width="180" height="56" rx="6" class="node acc"/><text x="480" y="117" class="nodelbl">inflight</text>
+        <rect x="720" y="84" width="180" height="56" rx="6" class="node pass"/><text x="810" y="117" class="nodelbl">done</text>
+        <!-- empty -> inflight -->
+        <line x1="240" y1="104" x2="388" y2="104" class="edge acc" marker-end="url(#aha)"/>
+        <text x="248" y="96" class="edgelbl acc">first demand</text>
+        <text x="248" y="156" class="edgelbl">runs fx on a fiber rooted</text>
+        <text x="248" y="170" class="edgelbl">in the captured scope</text>
+        <!-- inflight -> done -->
+        <line x1="570" y1="104" x2="718" y2="104" class="edge" marker-end="url(#ah2)"/>
+        <text x="596" y="96" class="edgelbl">success</text>
+        <text x="596" y="156" class="edgelbl">value handed to every</text>
+        <text x="596" y="170" class="edgelbl">joiner, then kept</text>
+        <!-- inflight -> empty (failure), curved below -->
+        <path d="M 400 140 C 360 200, 220 200, 180 142" class="edge fail" marker-end="url(#ahf)"/>
+        <text x="236" y="206" class="edgelbl fail">failure: joiners receive it, the cell resets, the next demand retries</text>
+        <!-- inflight self loop: join -->
+        <path d="M 520 84 C 520 40, 440 40, 440 84" class="edge acc" marker-end="url(#aha)"/>
+        <text x="480" y="36" class="edgelbl acc" text-anchor="middle">concurrent demand joins</text>
+        <!-- done self loop -->
+        <path d="M 850 84 C 850 40, 770 40, 770 84" class="edge" marker-end="url(#ah2)"/>
+        <text x="810" y="36" class="edgelbl" text-anchor="middle">demand: the value</text>
+        <!-- teardown note -->
+        <text x="720" y="170" class="edgelbl">runtime scope closes in reverse</text>
+        <text x="720" y="184" class="edgelbl">acquisition order at rt.close()</text>
+      </svg>
+      <figcaption>Cell = empty | inflight(fiber, joiners) | done(value). A demanded name that is on the demander's own construction chain is <code>CyclicDependency</code>; a name with no provider is <code>MissingProvider</code>, which the types already ruled out.</figcaption>
+    </figure>
+    <div class="prose">
+      <ul>
+        <li><strong>Startup</strong> demands each provider in list order. Cycles and missing providers surface exactly where <code>Plan.from</code> surfaced them.</li>
+        <li><strong>The construction chain</strong> is inherited by fibers a provider forks, so a cycle that crosses a <code>fork</code> is still a cycle rather than a hang. This is the one genuinely new piece of fiber state.</li>
+        <li><strong>Synchronous entry points</strong> do the same with a nested <code>interpretSync</code>; an async boundary inside a provider under <code>runSync</code> is <code>Die(AsyncBoundary)</code>, as today.</li>
+        <li><strong>Introspection</strong> improves: each provider can record what it demanded while building, so <code>rt.graph()</code> shows the graph that actually happened, including which conditional branches ran.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="diagnostics">
+    <div class="head">
+      <div class="eyebrow">Diagnostics, measured</div>
+      <h2>What <code>tsc</code> 5.9.3 actually prints</h2>
+    </div>
+    <div class="prose">
+      <p>Every message below was produced against the spike with its <code>@ts-expect-error</code> lines stripped, not recalled.</p>
+    </div>
+    <div class="diag">
+      <div class="diagnostic">
+        <header><span class="code">TS2345</span><span>Missing service, on <code>run</code></span><span class="same">identical to today</span></header>
+        <pre>Type 'Fx&lt;User, DbError, "Logger" | "Db"&gt;' is not assignable to type <span class="hi">'"e2: missing service Logger"'</span>.</pre>
+      </div>
+      <div class="diagnostic">
+        <header><span class="code">TS2339</span><span>Open provider list, on <code>runtime</code></span><span class="newtag">new · today has no static check here</span></header>
+        <pre>Property 'run' does not exist on type <span class="hi">'"e2: missing service Clock"'</span>.</pre>
+      </div>
+      <div class="diagnostic">
+        <header><span class="code">TS2739</span><span>An abstract service where a provider is needed</span></header>
+        <pre>Type 'Service&lt;"Db", Db&gt;' is missing the following properties from type 'Provider&lt;any, any, any&gt;':
+<span class="hi">provides, build</span>, _Provides, _Needs, _Error</pre>
+      </div>
+      <div class="diagnostic">
+        <header><span class="code">TS2345</span><span>A method reaching for a service its contract does not declare</span><span class="same">successor of the old "undeclared dependency" error</span></header>
+        <pre><span class="dim">… seven structural lines through Generator and IteratorResult …</span>
+Type 'Fx&lt;{ id: string; }, never, "Logger"&gt;' is not assignable to type 'Fx&lt;User, DbError, never&gt;'.
+  <span class="hi">Type '"Logger"' is not assignable to type 'never'.</span></pre>
+      </div>
+    </div>
+    <div class="prose">
+      <p>The fourth is still deep, but it now fires only when a contract is genuinely violated rather than when bookkeeping drifted, and the fix is stated by the contract: declare the dependency on that method, or resolve the service at construction.</p>
+    </div>
+    <h3>How <code>runtime</code> got its check</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Shape tried</th><th>What tsc printed</th><th>Verdict</th></tr></thead>
+        <tbody>
+          <tr><td>Conditional <strong>return</strong> type: <code>Promise&lt;Runtime&lt;…&gt;&gt;</code> or the literal</td><td><code>Property 'run' does not exist on type '"e2: missing service Logger"'.</code></td><td style="color:var(--pass);font-weight:600">Chosen</td></tr>
+          <tr><td>Intersection on the providers argument</td><td><code>Provider&lt;"Config", never, never&gt;</code> is not assignable to <code>(… | …) &amp; string</code></td><td style="color:var(--muted)">Noise, as the first spike's notes predicted</td></tr>
+          <tr><td>Rest parameter that exists only when the graph is open</td><td><code>Expected 2 arguments, but got 1.</code></td><td style="color:var(--muted)">Does not name the service</td></tr>
+          <tr><td>Check intersected into the optional <code>options</code> argument</td><td>nothing</td><td style="color:var(--fail)">Silent when options is omitted</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>The chosen shape has one hole: a <code>runtime(...)</code> whose result is never used compiles. That is the same class as the forgotten-<b class="y">yield*</b> guard already listed under <em>Honest limitations</em>, and every real call site uses the result.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="migration">
+    <div class="head">
+      <div class="eyebrow">Migration</div>
+      <h2>What changed in <code>src/</code></h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>File</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>service.ts</code></td><td>Add <code>make</code> and <code>of</code> as methods; add the <code>(name, body)</code> overload returning a defaulted service; drop <code>Service.make</code>.</td></tr>
+          <tr><td><code>provider.ts</code></td><td>Becomes the <code>Provider</code> type plus two private constructors. Delete the <code>MakeProvider</code> constraint, <code>ProviderSync</code>, <code>ServicesFor</code>, <code>provider</code>.</td></tr>
+          <tr><td><code>plan.ts</code></td><td>Delete, with <code>plan.spec.ts</code>. Keep <code>DuplicateProvider</code>, <code>CyclicDependency</code>, <code>MissingProvider</code> in <code>errors.ts</code>.</td></tr>
+          <tr><td><code>cell.ts</code> <span class="new">new</span></td><td>The memo cell: empty / inflight / done, join, failure resets, fiber rooted in the captured scope.</td></tr>
+          <tr><td><code>ops.ts</code></td><td><code>memo(fx, { eager })</code> and <code>lazy(provider)</code> on top of the cell.</td></tr>
+          <tr><td><code>run.ts</code></td><td>Replace <code>buildSync</code> / <code>buildAsync</code> with the registry, cells and <code>resolve</code>; the warm-up skips lazy providers; <code>runtime</code> gains the conditional return; drop <code>Runtime.make</code>.</td></tr>
+          <tr><td><code>interpreter.ts</code></td><td>The <code>Service</code> case calls <code>resolve</code> instead of <code>services.get</code>.</td></tr>
+          <tr><td><code>fiber.ts</code></td><td>Carry <code>chain: readonly string[]</code>, inherited on fork.</td></tr>
+          <tr><td><code>tests/diagnostics/…fixture.ts</code></td><td>CASE 4 (undeclared dependency) is replaced by "contract violated" and "open runtime list"; the spec's count and wording follow.</td></tr>
+          <tr><td><code>README.md</code></td><td><em>One way to compose providers</em> gets simpler; two <em>Honest limitations</em> entries go; a short <em>Lazy initialisation</em> section arrives.</td></tr>
+          <tr><td><code>prototype/e2</code></td><td>Mechanical port. The spike shows every shape it needs.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>Suggested order</h3>
+    <ol class="steps">
+      <li><b><code>service.ts</code> and <code>provider.ts</code> types</b><span>The spike is the reference; the type tests in <code>types.spec.ts</code> move first.</span></li>
+      <li><b><code>cell.ts</code>, then <code>resolve</code> in <code>run.ts</code> and <code>interpreter.ts</code>, then <code>memo</code></b><span>With <code>di.spec.ts</code> plus a new <code>cell.spec.ts</code> covering joining, failure reset, interrupted joiners, eager start and scope capture.</span></li>
+      <li><b>Delete <code>plan.ts</code></b><span>Keep the three error classes.</span></li>
+      <li><b>Diagnostics fixture and spec</b><span>Pin the new wording the same way the missing-service message is pinned today.</span></li>
+      <li><b>Port <code>prototype/e2</code>, then the README</b><span>Re-run the comparison numbers; the bundle and test-time figures should not move.</span></li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="tradeoffs">
+    <div class="head">
+      <div class="eyebrow">Trade-offs</div>
+      <h2>Decide these with eyes open</h2>
+    </div>
+    <div class="grid2">
+      <div class="to"><h4><code>of</code> shares the instance across runtimes</h4><p><code>LocalStore.of(new Map())</code> in two runtimes is one map. Same as <code>Layer.succeed</code>. Stateful doubles use <code>make</code>.</p></div>
+      <div class="to"><h4>Conditional dependencies over-approximate</h4><p><code>if (cfg.cache) yield* Cache</code> puts <code>Cache</code> in <code>Needs</code> whether or not the branch runs, so the list must contain it. Correct, and the price of a static check.</p></div>
+      <div class="to"><h4>Construction order changes</h4><p>From Kahn order to list order, demand-first. Any dependency-respecting order is valid and teardown reverses whichever happened. A test that pins log order will move.</p></div>
+      <div class="to"><h4>Defaults are never pulled in transitively</h4><p><code>runtime([Send])</code> does not drag in <code>Config</code>. The check works on names, and a name cannot know whether it has a default. This keeps "named once" true and is the deliberate difference from <code>Effect.Service</code>'s <code>dependencies</code>.</p></div>
+      <div class="to"><h4>Mutual call-time dependencies declare the transitive set</h4><p><code>ping</code> needs <code>'Ping' | 'Pong'</code>, not just <code>'Pong'</code>. The first draft got this wrong and <code>tsc</code> caught it, which is the point.</p></div>
+      <div class="to"><h4><code>memo</code> does not cache failure</h4><p>A store that fails to open is retried by the next read. The opposite policy is a one-line change in the cell and should be decided once, for providers and <code>memo</code> alike, since they share it.</p></div>
+      <div class="to"><h4><code>lazy</code> trades fail-fast for one service</h4><p>A provider wrapped at the root is not exercised at startup, so a construction bug in it is found by its first user, as a defect. Use it for services genuinely optional at boot, not as a default.</p></div>
+      <div class="to"><h4>Deliberately not included</h4><p>A plain-thunk overload for <code>make</code>. Generator-only keeps one form; <code>of</code> covers constants. Easy to add later if the <code>function*</code> with no <b class="y">yield*</b> grates.</p></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="decision">
+    <div class="head">
+      <div class="eyebrow">Decision</div>
+      <h2>Go, and done</h2>
+    </div>
+    <div class="prose">
+      <p>Implemented the same day. <code>src/</code> now matches this page: <code>service.ts</code>, <code>provider.ts</code>, the new <code>cell.ts</code>, <code>run.ts</code> and <code>memo</code> in <code>ops.ts</code>; <code>plan.ts</code> is gone; the diagnostics fixture pins the new wording; the prototype is ported with <code>memo(Mps)</code> in Send and Receive and <code>lazy()</code> at its root, and its 27 scenarios pass unchanged.</p>
+      <p>The spike passes, the diagnostic e2 exists for is unchanged, <code>runtime</code> gains a check it was missing, lazy initialisation costs one primitive plus a root-level marker rather than a runtime mode, and the DI surface drops from twelve names to eight. The prototype port at the bottom of the spike compiles with the same bodies it has today.</p>
+      <p>One decision to make once, before <code>cell.ts</code> is written: whether a failed open is retried on the next demand or cached as a permanent failure. This review chose retry.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>spike/di_v2.ts · 1 157 lines, types only, in the project typecheck</span>
+    <span>spike/di_v2.md · the note this page summarises</span>
+    <span>prototype/COMPARISON.md · the yardstick</span>
+  </footer>
+</main>

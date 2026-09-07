@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>e2 browser smoke test</title>
+<style>body{font:14px ui-monospace,monospace;padding:24px;background:#0f1115;color:#d7dae0}
+h1{font-size:15px;margin:0 0 16px}pre{background:#171a21;padding:14px;border-radius:6px;overflow:auto}
+.ok{color:#7ee787}.bad{color:#ff7b72}</style></head>
+<body>
+<h1>e2 — browser smoke test</h1>
+<pre id="out">running…</pre>
+<script src="./e2-smoke.js"></script>
+<script>
+  ;(async () => {
+    const out = document.getElementById('out')
+    try {
+      const result = await globalThis.__e2_browser_result
+      const checks = [
+        ['three-service graph resolves', JSON.stringify(result.found) === '{"id":"1","name":"Ada"}'],
+        ['typed failure reaches caller', result.missingIsErr === true && result.missingId === 'nope'],
+        ['race + AbortSignal + timers', result.raced === 'fast'],
+        ['retry with real delays', result.retried === 3],
+        ['runtime reuse', JSON.stringify(result.viaRuntime) === '{"id":"1","name":"Ada"}'],
+        ['scope teardown ran', Array.isArray(result.released) && result.released.length === 5],
+      ]
+      const failed = checks.filter(([, pass]) => !pass)
+      const lines = checks.map(([name, pass]) => `${pass ? 'PASS' : 'FAIL'}  ${name}`)
+      out.textContent = lines.join('\n') + '\n\n' + JSON.stringify(result, null, 2)
+      out.className = failed.length === 0 ? 'ok' : 'bad'
+      console.log('[e2-smoke] ' + (failed.length === 0
+        ? 'ALL PASS (' + checks.length + ' checks)'
+        : 'FAILURES: ' + failed.map(([n]) => n).join(', ')))
+      console.log('[e2-smoke] result=' + JSON.stringify(result))
+    } catch (error) {
+      out.className = 'bad'
+      out.textContent = 'THREW: ' + (error && error.stack || error)
+      console.log('[e2-smoke] THREW ' + error)
+    }
+  })()
+</script>
+</body></html>

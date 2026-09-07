@@ -1,0 +1,37 @@
+// Bun Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`snapshot of the full diagnostic set wording is pinned 1`] = `
+"Argument of type 'Fx<User, DbError, "Db" | "Logger">' is not assignable to parameter of type 'Fx<User, DbError, "Db" | "Logger"> & "e2: missing service Logger"'.
+Type 'Fx<User, DbError, "Db" | "Logger">' is not assignable to type '"e2: missing service Logger"'.
+
+Argument of type 'Fx<User, DbError, "Db" | "Logger">' is not assignable to parameter of type 'Fx<User, DbError, "Db" | "Logger"> & ("e2: missing service Logger" | "e2: missing service Config")'.
+Type 'Fx<User, DbError, "Db" | "Logger">' is not assignable to type 'Fx<User, DbError, "Db" | "Logger"> & "e2: missing service Config"'.
+Type 'Fx<User, DbError, "Db" | "Logger">' is not assignable to type '"e2: missing service Config"'.
+
+Argument of type 'Fx<User, DbError, "Db" | "Logger">' is not assignable to parameter of type 'Fx<User, DbError, "Db" | "Logger"> & "e2: missing service Config"'.
+Type 'Fx<User, DbError, "Db" | "Logger">' is not assignable to type '"e2: missing service Config"'.
+
+Argument of type '() => Generator<never, { query: (id: string) => Fx<{ id: string; }, never, "Logger">; }, never>' is not assignable to parameter of type '() => Generator<never, DbSvc, never>'.
+Call signature return types 'Generator<never, { query: (id: string) => Fx<{ id: string; }, never, "Logger">; }, never>' and 'Generator<never, DbSvc, never>' are incompatible.
+The types returned by 'next(...)' are incompatible between these types.
+Type 'IteratorResult<never, { query: (id: string) => Fx<{ id: string; }, never, "Logger">; }>' is not assignable to type 'IteratorResult<never, DbSvc>'.
+Type 'IteratorReturnResult<{ query: (id: string) => Fx<{ id: string; }, never, "Logger">; }>' is not assignable to type 'IteratorResult<never, DbSvc>'.
+Type 'IteratorReturnResult<{ query: (id: string) => Fx<{ id: string; }, never, "Logger">; }>' is not assignable to type 'IteratorReturnResult<DbSvc>'.
+Type '{ query: (id: string) => Fx<{ id: string; }, never, "Logger">; }' is not assignable to type 'DbSvc'.
+The types returned by 'query(...)' are incompatible between these types.
+Type 'Fx<{ id: string; }, never, "Logger">' is not assignable to type 'Fx<User, DbError, never>'.
+Type '"Logger"' is not assignable to type 'never'.
+
+Argument of type '"e2: this generator returns an Fx - did you forget \`yield*\`?"' is not assignable to parameter of type 'Fx<unknown, unknown, string> & \`e2: missing service \${string}\`'.
+Type 'string' is not assignable to type 'Fx<unknown, unknown, string>'.
+
+Argument of type '() => Generator<Service<"Db", DbSvc>, never, never>' is not assignable to parameter of type '() => Generator<AnyYield, never, never>'.
+Call signature return types 'Generator<Service<"Db", DbSvc>, never, never>' and 'Generator<AnyYield, never, never>' are incompatible.
+The types returned by 'next(...)' are incompatible between these types.
+Type 'IteratorResult<Service<"Db", DbSvc>, never>' is not assignable to type 'IteratorResult<AnyYield, never>'.
+Type 'IteratorYieldResult<Service<"Db", DbSvc>>' is not assignable to type 'IteratorResult<AnyYield, never>'.
+Type 'IteratorYieldResult<Service<"Db", DbSvc>>' is not assignable to type 'IteratorYieldResult<AnyYield>'.
+Property '[YieldTypeId]' is missing in type 'Service<"Db", DbSvc>' but required in type 'FxYield<any, any, any>'.
+
+Property 'then' does not exist on type '"e2: missing service Config"'."
+`;
