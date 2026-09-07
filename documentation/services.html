@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2 · Services &amp; DI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <a class="brand" href="index.html"><span class="mark">e2</span><span class="tag">documentation</span></a>
+  <ol>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="effects.html">Effects</a></li>
+    <li><a href="services.html" aria-current="page">Services &amp; DI</a></li>
+    <li><a href="lazy-and-batch.html">Lazy init &amp; batching</a></li>
+    <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
+    <li><a href="workers.html">Workers</a></li>
+    <li><a href="guides.html">Guides</a></li>
+  </ol>
+  <div class="onpage">
+    <div class="lbl">On this page</div>
+    <ol>
+      <li><a href="#define">Defining a service</a></li>
+      <li><a href="#implement">Implementing one</a></li>
+      <li><a href="#list">The flat list</a></li>
+      <li><a href="#runtime">The runtime</a></li>
+      <li><a href="#lazy">Lazy providers</a></li>
+      <li><a href="#testing">Test doubles</a></li>
+      <li><a href="#extension">Extension points</a></li>
+      <li><a href="#diagnostics">Diagnostics</a></li>
+      <li><a href="#limits">Honest limitations</a></li>
+    </ol>
+  </div>
+  <div class="side-foot">e2 · <a href="../README.md">README</a></div>
+</nav>
+
+<main>
+  <header class="page">
+    <div class="eyebrow">e2 · services and dependency injection</div>
+    <h1>A service is a contract and a key. Using it is declaring it.</h1>
+    <p class="lede">Requirements are inferred, not declared. A body that does <code>yield* Db</code> requires <code>'Db'</code>, and that requirement propagates to every caller without touching a signature in between. Wiring is one flat list; each entry is built on first demand, exactly once.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="define">
+    <div class="head">
+      <div class="eyebrow">Defining</div>
+      <h2>Two forms, one rule: the interface and the key share a name</h2>
+    </div>
+    <div class="prose">
+      <p><strong>Contract-first</strong> is the default. Write the interface, then the key. They live in different declaration spaces, so type <code>Db</code> is the contract, value <code>Db</code> is the key, <code>yield* Db</code> gives a <code>Db</code>, and helpers take <code>(db: Db)</code>. It is two calls because <code>Api</code> is explicit while <code>Name</code> must be inferred as a literal, and TypeScript infers all of a call's type arguments or none.</p>
+    </div>
+<pre class="code"><code><span class="k">export interface</span> <span class="t">Db</span> {
+  query(id: <span class="t">string</span>): <span class="t">Fx</span>&lt;<span class="t">User</span>, <span class="t">DbError</span>&gt;
+}
+<span class="k">export const</span> Db = service&lt;<span class="t">Db</span>&gt;()(<span class="s">'Db'</span>)   <span class="c">// Service&lt;'Db', Db&gt;</span></code></pre>
+    <div class="prose">
+      <p><strong>Implementation-first</strong> fits leaves whose shape <em>is</em> the value: configuration, a clock, an in-memory index. Both the contract and the dependencies come from the body, and the result carries its default, so it goes into a list as itself.</p>
+    </div>
+<pre class="code"><code><span class="k">export const</span> Config = service(<span class="s">'Config'</span>, <span class="k">function*</span> () {
+  <span class="k">return</span> { deviceId: <span class="s">'device-main'</span>, userId: <span class="s">'user-me'</span>, pageSize: <span class="n">50</span> }
+})
+<span class="k">export type</span> <span class="t">Config</span> = <span class="t">ApiOf</span>&lt;<span class="k">typeof</span> Config&gt;
+<span class="c">// Defaulted&lt;'Config', { deviceId: string; userId: string; pageSize: number }, never, never&gt;</span></code></pre>
+    <div class="prose">
+      <p>Prefer contract-first for anything with more than a couple of methods, so hovers read <code>Mps</code> rather than a structural type. <code>ApiOf&lt;typeof Db&gt;</code> and <code>NameOf&lt;typeof Db&gt;</code> recover the two halves of any key.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="implement">
+    <div class="head">
+      <div class="eyebrow">Implementing</div>
+      <h2><code>Db.make</code> for a body, <code>Db.of</code> for a value</h2>
+    </div>
+    <div class="prose">
+      <p>Both hang off the key and both return a <code>Provider</code>, which is the type a list is made of. Nobody constructs one by hand.</p>
+      <p><code>Db.make(function* () { … })</code> runs the body when the service is first demanded. Whatever the body yields is the provider's <code>Needs</code>, minus <code>Scope</code>, which every provider has. The body may return an object literal, a class instance, or the result of a factory; the contract bounds it, so a method that reaches for a service the contract does not mention is rejected where it is written.</p>
+    </div>
+    <div class="compare">
+      <div class="figure">
+        <div class="caption"><span class="lbl">object</span></div>
+<pre class="code"><code><span class="k">const</span> DbLive = Db.make(<span class="k">function*</span> () {
+  <span class="k">const</span> config = <span class="y">yield*</span> Config
+  <span class="k">const</span> log = <span class="y">yield*</span> Logger
+  <span class="k">const</span> pool = <span class="y">yield*</span> connect(config.url)
+  <span class="y">yield*</span> log.info(<span class="s">'connected'</span>)
+  <span class="k">return</span> { query: (id) =&gt; sync(() =&gt; pool.q(id)) }
+})
+<span class="c">// Provider&lt;'Db', 'Config' | 'Logger', ConnError&gt;</span></code></pre>
+      </div>
+      <div class="figure">
+        <div class="caption"><span class="lbl">class, or factory</span></div>
+<pre class="code"><code><span class="k">class</span> <span class="t">PgDb</span> <span class="k">implements</span> <span class="t">Db</span> {
+  <span class="k">constructor</span>(<span class="k">private readonly</span> pool: <span class="t">Pool</span>) {}
+  query(id: <span class="t">string</span>) { <span class="k">return</span> sync(() =&gt; <span class="k">this</span>.pool.q(id)) }
+}
+
+<span class="k">const</span> DbLive = Db.make(<span class="k">function*</span> () {
+  <span class="k">const</span> config = <span class="y">yield*</span> Config
+  <span class="k">return new</span> <span class="t">PgDb</span>(<span class="y">yield*</span> connect(config.url))
+})
+<span class="c">// Provider&lt;'Db', 'Config', ConnError&gt;</span></code></pre>
+      </div>
+    </div>
+    <div class="prose">
+      <p><code>Db.of(value)</code> is for a value you already hold: configuration, a test double. It has no needs and cannot fail. One thing to know: it shares the instance across runtimes, so a stateful double (<code>Store.of(new Map())</code>) is one map in every test that uses it. Use <code>make</code> for state.</p>
+      <p>A dependency can also be per method. A contract may say <code>loadRemote(id): Fx&lt;User, DbError, 'ServerFetch'&gt;</code>, and then only programs that take that path require <code>ServerFetch</code>; the implementation resolves it with <code>yield* ServerFetch</code> inside the method, and it is not a construction dependency.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="list">
+    <div class="head">
+      <div class="eyebrow">Wiring</div>
+      <h2>One flat, unordered list, built on demand</h2>
+    </div>
+    <div class="prose">
+      <p>There is no <code>provide</code>, <code>provideMerge</code>, <code>merge</code> or <code>mergeAll</code>, and there is no dependency list on a provider. A list is a set of providers, each named once. Building it means demanding each one in list order; a body that yields another service demands <em>it</em>, recursively, so construction order is dependency order without a sort, and a service is built exactly once however many bodies reach for it.</p>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 250" role="img" aria-label="A flat list of providers; demanding Db builds Config and Logger on the way; the graph is discovered by running">
+        <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead acc"/></marker></defs>
+        <text x="24" y="30" class="sub">runtime([DbLive, LoggerLive, ConfigLive])</text>
+        <rect x="24" y="44" width="150" height="40" rx="5" class="node"/><text x="99" y="69" class="nodelbl">DbLive</text>
+        <rect x="24" y="96" width="150" height="40" rx="5" class="node"/><text x="99" y="121" class="nodelbl">LoggerLive</text>
+        <rect x="24" y="148" width="150" height="40" rx="5" class="node"/><text x="99" y="173" class="nodelbl">ConfigLive</text>
+        <text x="24" y="222" class="sub">list order is irrelevant; each is named once</text>
+        <text x="300" y="30" class="sub">what running the first body discovers</text>
+        <rect x="300" y="44" width="130" height="40" rx="5" class="node acc"/><text x="365" y="69" class="nodelbl">Db</text>
+        <rect x="520" y="44" width="130" height="40" rx="5" class="node acc"/><text x="585" y="69" class="nodelbl">Logger</text>
+        <rect x="740" y="44" width="130" height="40" rx="5" class="node acc"/><text x="805" y="69" class="nodelbl">Config</text>
+        <line x1="430" y1="64" x2="518" y2="64" class="edge acc" marker-end="url(#ah3)"/>
+        <text x="474" y="56" class="edgelbl acc" text-anchor="middle">yield*</text>
+        <line x1="650" y1="64" x2="738" y2="64" class="edge acc" marker-end="url(#ah3)"/>
+        <text x="694" y="56" class="edgelbl acc" text-anchor="middle">yield*</text>
+        <path d="M 365 84 C 365 150, 700 150, 805 84" class="edge acc" marker-end="url(#ah3)"/>
+        <text x="585" y="142" class="edgelbl acc" text-anchor="middle">yield* (already built: the cell hands back the value)</text>
+        <text x="300" y="196" class="sub">built: Config, then Logger, then Db — dependency order, nobody sorted</text>
+        <text x="300" y="222" class="sub">torn down in reverse at close</text>
+      </svg>
+      <figcaption>Cycles and missing providers still surface at startup, because startup demands every provider. Both are defects that name the services involved.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>A list that does not close over its own needs is a compile error at the list. <code>runtime</code>'s return type collapses to a literal naming the gap, so the next line reads:</p>
+    </div>
+    <div class="diagnostic">
+      <header><span class="code">TS2339</span><span>an open list</span></header>
+      <pre>Property 'run' does not exist on type <span class="hi">'"e2: missing service Config"'</span>.</pre>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="runtime">
+    <div class="head">
+      <div class="eyebrow">Runtime</div>
+      <h2>What <code>runtime</code> does, in four steps</h2>
+    </div>
+    <ol class="steps">
+      <li><div><b>Register.</b><p>Each provider becomes a cell under its service name, behind an empty root map that already holds the scope. Nothing is built. Two providers for one name is <code>DuplicateProvider</code>.</p></div></li>
+      <li><div><b>Warm up.</b><p>Every provider not wrapped in <code>lazy()</code> is demanded, in list order. A demand runs the body on a parentless fiber and memoises the value; a body that yields another service demands it in turn. A construction cycle is <code>CyclicDependency</code>, naming the loop; a body that fails tears down what was built and rejects.</p></div></li>
+      <li><div><b>Serve.</b><p><code>rt.run(effect)</code> interprets an effect against the built map, with the effect's dependencies checked statically against what the runtime provides. <code>rt.fork(effect)</code> does the same on a detached fiber. <code>rt.graph()</code> reports each service's status, whether it was lazy, and what its construction demanded.</p></div></li>
+      <li><div><b>Close.</b><p><code>rt.close()</code>, or <code>await using</code>, interrupts any construction in flight and runs every finalizer in reverse acquisition order.</p></div></li>
+    </ol>
+<pre class="code"><code><span class="k">await using</span> rt = <span class="k">await</span> runtime([Config, NetworkLive, LocalStoreLive, lazy(MpsLive), lazy(SendLive)])
+
+<span class="k">await</span> rt.run(program)      <span class="c">// Promise&lt;Result&gt;; defects reject</span>
+<span class="k">await</span> rt.runExit(program)  <span class="c">// Promise&lt;Exit&gt;</span>
+rt.fork(program)           <span class="c">// a Fiber; how a server handles each request</span>
+rt.graph()                 <span class="c">// { Mps: { status: 'empty', lazy: true, demanded: [] }, … }</span>
+<span class="c">// closed at the end of the block, in reverse acquisition order</span></code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="lazy">
+    <div class="head">
+      <div class="eyebrow">Startup policy</div>
+      <h2><code>lazy(provider)</code> keeps a service out of the warm-up</h2>
+    </div>
+    <div class="prose">
+      <p>Construction is eager by default, which is what makes a bad graph fail at startup. A provider wrapped in <code>lazy()</code> at the composition root is skipped by the warm-up and built by whoever demands it first: a consumer's body, a <code>memo(Service)</code> handle, a request, a remote call. Later demanders join that one build. It is the same cell, only skipped.</p>
+      <p>The trade is explicit and local to the root: that service's construction failure no longer fails startup. It reaches the first demander as a <code>ProviderFailed</code> defect, and the cell resets so the next demand retries. Use it for services genuinely optional at boot, not as a default. Whatever is expensive <em>inside</em> a service belongs behind <a href="lazy-and-batch.html"><code>memo</code></a>, at the granularity of the resource, and that needs no policy at the root at all.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="testing">
+    <div class="head">
+      <div class="eyebrow">Testing</div>
+      <h2>Substitution is another provider for the same key</h2>
+    </div>
+    <div class="prose">
+      <p>There is no mocking layer. A test double is <code>Db.of({ … })</code> or a <code>Db.make</code> with a fake inside, in the list where <code>DbLive</code> would be. Because the list is checked for closure and duplicates, a double cannot be silently ignored or silently doubled. A defaulted service is overridden the same way: <code>Config.of({ … })</code> in the list instead of <code>Config</code>.</p>
+    </div>
+<pre class="code"><code><span class="k">const</span> result = <span class="k">await</span> run(getUser(<span class="s">'1'</span>), [
+  Db.of({ query: () =&gt; ok({ id: <span class="s">'stub'</span>, name: <span class="s">'Stub'</span> }) }),
+  ConfigLive,
+  LoggerLive,
+])</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="extension">
+    <div class="head">
+      <div class="eyebrow">Extension points</div>
+      <h2>A service nobody gives a default to</h2>
+    </div>
+    <div class="prose">
+      <p>A module that wants to be extended defines the key and depends on it, and defines no provider. Whoever composes the application supplies one. There is no separate concept for this: it is <code>service&lt;Api&gt;()</code> like everything else, and the provider is one more entry in the list.</p>
+      <p>The reference application uses this for its message pipeline. <code>Mps</code> depends on <code>PreStages</code>, <code>PostStages</code>, <code>Categorisers</code> and <code>DirectiveHandlers</code> and defines none of them. A feature adds a message kind by merging into the domain's open interfaces, and because the registries are exhaustive over those interfaces, forgetting to wire the feature in at the root is a compile error. See the <a href="guides.html#extend">guide</a>.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="diagnostics">
+    <div class="head">
+      <div class="eyebrow">Diagnostics</div>
+      <h2>What the compiler says, measured with tsc 5.9.3 and pinned by a test</h2>
+    </div>
+    <div class="diagnostic">
+      <header><span class="code">TS2345</span><span>a program needs a service the list lacks</span></header>
+      <pre>Type 'Fx&lt;User, DbError, "Db" | "Logger"&gt;' is not assignable to type <span class="hi">'"e2: missing service Logger"'</span>.</pre>
+    </div>
+    <div class="diagnostic">
+      <header><span class="code">TS2339</span><span>a runtime list that is not closed</span></header>
+      <pre>Property 'run' does not exist on type <span class="hi">'"e2: missing service Config"'</span>.</pre>
+    </div>
+    <div class="diagnostic">
+      <header><span class="code">TS2739</span><span>an abstract service where a provider is needed</span></header>
+      <pre>Type 'Service&lt;"Db", Db&gt;' is missing the following properties from type 'Provider&lt;any, any, any&gt;': <span class="hi">provides, build</span>, _Provides, _Needs, _Error</pre>
+    </div>
+    <div class="diagnostic">
+      <header><span class="code">TS2345</span><span>an implementation whose method reaches for a service the contract does not declare</span></header>
+      <pre><span class="dim">… seven structural lines through Generator and IteratorResult …</span>
+Type 'Fx&lt;{ id: string; }, never, "Logger"&gt;' is not assignable to type 'Fx&lt;User, DbError, never&gt;'.
+  <span class="hi">Type '"Logger"' is not assignable to type 'never'.</span></pre>
+    </div>
+    <div class="prose">
+      <p>The last one is the successor of what used to be an "undeclared dependency" error. It fires only when a contract is genuinely violated, and the fix is stated by the contract: declare the dependency on that method, or resolve the service at construction.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="limits">
+    <div class="head">
+      <div class="eyebrow">Honest limitations</div>
+      <h2>Things the design chose, with eyes open</h2>
+    </div>
+    <div class="prose">
+      <ul>
+        <li><strong>Two keys may not share a name.</strong> Names are what buy the readable diagnostics. The runtime rejects duplicates when the list is assembled. Use distinct names for distinct instances.</li>
+        <li><strong>An unused <code>runtime(...)</code> compiles.</strong> The closure check lives in the return type, so it fires where the runtime is used. Every real call site uses it.</li>
+        <li><strong>Conditional dependencies over-approximate.</strong> <code>if (cfg.cache) yield* Cache</code> puts <code>Cache</code> in <code>Needs</code> whether or not the branch runs, so the list must contain it.</li>
+        <li><strong>Defaults are never pulled in transitively.</strong> <code>runtime([Send])</code> does not drag in <code>Config</code>. The check works on names, and a name cannot know whether it has a default. Every service is named once, in the list.</li>
+        <li><strong>The contract-violation diagnostic is deep.</strong> The useful line is there, under nine levels of structural walk.</li>
+      </ul>
+    </div>
+  </section>
+
+  <nav class="pagenav">
+    <a href="effects.html"><span class="lbl">Previous</span>← Effects</a>
+    <a href="lazy-and-batch.html"><span class="lbl">Next</span>Lazy init &amp; batching →</a>
+  </nav>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2 · Effects</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <a class="brand" href="index.html"><span class="mark">e2</span><span class="tag">documentation</span></a>
+  <ol>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="effects.html" aria-current="page">Effects</a></li>
+    <li><a href="services.html">Services &amp; DI</a></li>
+    <li><a href="lazy-and-batch.html">Lazy init &amp; batching</a></li>
+    <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
+    <li><a href="workers.html">Workers</a></li>
+    <li><a href="guides.html">Guides</a></li>
+  </ol>
+  <div class="onpage">
+    <div class="lbl">On this page</div>
+    <ol>
+      <li><a href="#type">The type</a></li>
+      <li><a href="#build">Building one</a></li>
+      <li><a href="#result">Result is the pure subset</a></li>
+      <li><a href="#errors">Three failure channels</a></li>
+      <li><a href="#combinators">Combinators</a></li>
+      <li><a href="#run">Running</a></li>
+      <li><a href="#footgun">The yield* footgun</a></li>
+    </ol>
+  </div>
+  <div class="side-foot">e2 · <a href="../README.md">README</a></div>
+</nav>
+
+<main>
+  <header class="page">
+    <div class="eyebrow">e2 · effects</div>
+    <h1>An effect is a description of work, typed by what it produces, how it fails, and what it needs</h1>
+    <p class="lede">Every operation in e2 is an <code>Fx</code>. This page is about the value itself: how to build one, what <b class="y">yield*</b> means, how failure is represented, and the one mistake the type system cannot catch alone.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="type">
+    <div class="head">
+      <div class="eyebrow">The type</div>
+      <h2><code>Fx&lt;Value, Error, Dependency&gt;</code></h2>
+    </div>
+    <div class="prose">
+      <p>Three parameters, spelled out rather than <code>A, E, R</code>. <code>Value</code> is what a successful run produces. <code>Error</code> is the union of expected failures, <code>never</code> when there are none. <code>Dependency</code> is a union of service <em>names</em>, string literals like <code>'Db' | 'Logger'</code>, again <code>never</code> when there are none.</p>
+      <p>Names rather than service types are what keep every hover short. <code>Fx&lt;User, DbError, 'Db'&gt;</code> is what you see in the editor and in the compiler's messages, not <code>Fx&lt;User, DbError, Service&lt;'Db', DbApi&gt;&gt;</code>. The trade is that two services may not share a name; the runtime rejects that when a list is assembled.</p>
+      <p>All three parameters are covariant. An <code>Fx&lt;User, never, never&gt;</code> goes anywhere an <code>Fx&lt;User, DbError, 'Db'&gt;</code> is expected. That is why a plain <code>Result</code>, which is an <code>Fx</code> with no failure and no dependency, can be yielded inside any body.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="build">
+    <div class="head">
+      <div class="eyebrow">Building one</div>
+      <h2>Four constructors, chosen by what the body does</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Constructor</th><th>Gives you</th><th>Use it when</th></tr></thead>
+        <tbody>
+          <tr><td><code>gen(function* () { … })</code></td><td>an <code>Fx</code></td><td>the body sequences other effects with <b class="y">yield*</b>. The workhorse.</td></tr>
+          <tr><td><code>fx(function* (a, b) { … })</code></td><td>a function <code>(a, b) =&gt; Fx</code></td><td>the same body takes arguments. Sugar for an arrow returning <code>gen</code>; you never need it.</td></tr>
+          <tr><td><code>sync(() =&gt; v)</code></td><td>an <code>Fx&lt;V&gt;</code></td><td>the body is a plain synchronous computation with nothing to yield. A throw inside is a defect.</td></tr>
+          <tr><td><code>suspend(() =&gt; fx)</code></td><td>an <code>Fx</code></td><td>building the effect must be deferred until it is reached, which is how recursion stays lazy.</td></tr>
+          <tr><td><code>async_((resume, signal) =&gt; …)</code></td><td>an <code>Fx&lt;V, E&gt;</code></td><td>you are wrapping a callback API. Call <code>resume</code> once with an effect; return a cleanup to run on interruption.</td></tr>
+          <tr><td><code>fromPromise(make, onReject?)</code></td><td>an <code>Fx&lt;V, E&gt;</code></td><td>you have a promise-returning function. It receives the fiber's <code>AbortSignal</code>; without <code>onReject</code> a rejection is a defect.</td></tr>
+          <tr><td><code>ok(v)</code> / <code>err(e)</code></td><td>an <code>Ok&lt;V&gt;</code> / <code>Err&lt;E&gt;</code></td><td>you already hold the outcome. Also exported as <code>succeed</code> and <code>fail</code>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="compare">
+      <div class="figure">
+        <div class="caption"><span class="lbl">gen</span><code>a body that yields</code></div>
+<pre class="code"><code><span class="k">const</span> load = gen(<span class="k">function*</span> () {
+  <span class="k">const</span> config = <span class="y">yield*</span> parseConfig(raw)  <span class="c">// a plain Result</span>
+  <span class="k">const</span> port   = <span class="y">yield*</span> parsePort(config)
+  <span class="k">return</span> { ...config, port }
+})
+<span class="c">// Fx&lt;Config, ParseError | RangeError&gt;</span></code></pre>
+      </div>
+      <div class="figure">
+        <div class="caption"><span class="lbl">sync</span><code>a body with nothing to yield</code></div>
+<pre class="code"><code><span class="k">const</span> now = sync(() =&gt; Date.now())
+<span class="c">// Fx&lt;number&gt;</span>
+
+<span class="c">// the same thing, needlessly, with a generator:</span>
+<span class="k">const</span> now2 = gen(<span class="k">function*</span> () {
+  <span class="k">return</span> Date.now()
+})</code></pre>
+      </div>
+    </div>
+    <div class="callout warn">
+      <span class="t">Do not annotate a generator body's return type</span>
+      Writing <code>function* (): Generator&lt;…, User&gt;</code> supplies a contextual type that disables inference of the yielded token, and <code>Error</code> and <code>Dependency</code> collapse to whatever you wrote. Let the body infer; annotate the <em>contract</em> the result is assigned to instead.
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="result">
+    <div class="head">
+      <div class="eyebrow">Result</div>
+      <h2><code>Result</code> is the pure subset of <code>Fx</code></h2>
+    </div>
+    <div class="prose">
+      <p><code>Ok</code> <em>is</em> <code>succeed</code> and <code>Err</code> <em>is</em> <code>fail</code>. They are the interpreter's own success and failure instructions, so a <code>Result</code> you already hold can be yielded inside a body with no adapter, and <code>yield* someResult</code> short-circuits on <code>Err</code>. That is the <code>?</code> operator TypeScript does not have.</p>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 190" role="img" aria-label="Ok and Err are Fx nodes; a Result yielded inside a body either continues with the value or fails the body">
+        <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker><marker id="ahf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead fail"/></marker></defs>
+        <rect x="24" y="24" width="440" height="142" rx="8" class="node" style="fill:none;stroke-dasharray:4 4"/>
+        <text x="40" y="48" class="sub">Fx&lt;Value, Error, Dependency&gt;</text>
+        <rect x="60" y="66" width="170" height="76" rx="6" class="node pass"/>
+        <text x="145" y="98" class="nodelbl">Ok&lt;Value&gt;</text>
+        <text x="145" y="120" class="sub" text-anchor="middle">= succeed(value)</text>
+        <rect x="264" y="66" width="170" height="76" rx="6" class="node" style="fill:var(--fail-soft);stroke:var(--fail)"/>
+        <text x="349" y="98" class="nodelbl">Err&lt;Error&gt;</text>
+        <text x="349" y="120" class="sub" text-anchor="middle">= fail(error)</text>
+        <text x="247" y="160" class="sub" text-anchor="middle">Result&lt;Value, Error&gt; = Ok | Err</text>
+        <rect x="560" y="52" width="376" height="104" rx="6" class="node ink"/>
+        <text x="580" y="80" class="sub" style="fill:var(--code-gutter)">inside a body</text>
+        <text x="580" y="106" class="lbl" style="fill:var(--code-ink)">const port = <tspan style="fill:var(--ys);font-weight:600">yield*</tspan> parsePort(raw)</text>
+        <text x="580" y="134" class="sub" style="fill:var(--code-gutter)">Ok → continues with the value · Err → the body fails with it</text>
+        <line x1="464" y1="96" x2="558" y2="96" class="edge" marker-end="url(#ah2)"/>
+      </svg>
+      <figcaption>Outside a body, <code>if (!result.ok) return result</code> typechecks with no cast, because <code>Err&lt;E&gt;</code> is a member of the declared return union.</figcaption>
+    </figure>
+    <dl class="kv">
+      <dt>ok, err</dt><dd>construct</dd>
+      <dt>isOk, isErr, isResult</dt><dd>narrow</dd>
+      <dt>Result.all([…])</dt><dd>first <code>Err</code> wins, else a tuple of values</dd>
+      <dt>Result.attempt(() =&gt; …)</dt><dd>a throwing function as a <code>Result</code></dd>
+      <dt>partition(results)</dt><dd>values and errors, separated</dd>
+      <dt>fromNullable(value, onNull)</dt><dd><code>null</code> or <code>undefined</code> as an <code>Err</code></dd>
+    </dl>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="errors">
+    <div class="head">
+      <div class="eyebrow">Failure</div>
+      <h2>Three channels, and only one of them is yours to handle</h2>
+    </div>
+    <div class="prose">
+      <p>A run ends in an <code>Exit&lt;Value, Error&gt;</code>, which is <code>Result&lt;Value, Cause&lt;Error&gt;&gt;</code>. A <code>Cause</code> is one of three things:</p>
+      <ul>
+        <li><strong><code>Fail&lt;Error&gt;</code></strong>, an expected failure, the one in the type. <code>err(new NotFound(id))</code> produces it; <code>catchAll</code> and <code>attemptFx</code> see it.</li>
+        <li><strong><code>Die</code></strong>, a defect: a throw inside <code>sync</code>, an unmapped promise rejection, a missing provider at runtime. Not in the type, and deliberately invisible to <code>catchAll</code>, because folding defects into the error channel would force every call site to handle <code>Error | unknown</code>.</li>
+        <li><strong><code>Interrupt</code></strong>, the fiber was cancelled. Also invisible to <code>catchAll</code>.</li>
+      </ul>
+      <p><code>run</code> returns a <code>Result&lt;Value, Error&gt;</code>: expected failures come back as <code>Err</code>, while defects and interruption <em>reject</em>, because they are bugs rather than outcomes. Use <code>runExit</code> to observe the whole <code>Cause</code>. <code>Cause.pretty(cause)</code> prints it; <code>Cause.squash(cause)</code> reduces it to the underlying error or defect.</p>
+      <p>Domain errors are ordinary classes with a <code>_tag</code>. <code>TaggedError&lt;'Tag'&gt;</code> is a base that extends the global <code>Error</code> so stacks and <code>instanceof</code> behave.</p>
+    </div>
+<pre class="code"><code><span class="k">class</span> <span class="t">NotFound</span> <span class="k">extends</span> <span class="t">TaggedError</span>&lt;<span class="s">'NotFound'</span>&gt; {
+  <span class="k">readonly</span> _tag = <span class="s">'NotFound'</span> <span class="k">as const</span>
+  <span class="k">constructor</span>(<span class="k">readonly</span> id: <span class="t">string</span>) { <span class="k">super</span>(<span class="s">`no message ${id}`</span>) }
+}
+
+<span class="k">const</span> exit = <span class="k">await</span> runExit(program, providers)
+<span class="k">if</span> (!exit.ok) {
+  <span class="k">switch</span> (exit.error._tag) {
+    <span class="k">case</span> <span class="s">'Fail'</span>:      <span class="c">// exit.error.error is NotFound | …</span>
+    <span class="k">case</span> <span class="s">'Die'</span>:       <span class="c">// exit.error.defect is unknown</span>
+    <span class="k">case</span> <span class="s">'Interrupt'</span>: <span class="c">// exit.error.reason</span>
+  }
+}</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="combinators">
+    <div class="head">
+      <div class="eyebrow">Combinators</div>
+      <h2>Curried, so they compose; or reach for them as <code>Fx.map</code></h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Signature, informally</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>map(f)(fx)</code></td><td><code>Fx&lt;A,E,D&gt; → Fx&lt;B,E,D&gt;</code></td><td>transform the value</td></tr>
+          <tr><td><code>flatMap(f)(fx)</code></td><td><code>Fx&lt;A,E,D&gt; → Fx&lt;B, E|E2, D|D2&gt;</code></td><td>sequence a dependent effect; inside a body, prefer <b class="y">yield*</b></td></tr>
+          <tr><td><code>catchAll(f)(fx)</code></td><td><code>Fx&lt;A,E,D&gt; → Fx&lt;A|B, E2, D|D2&gt;</code></td><td>recover from an expected failure only</td></tr>
+          <tr><td><code>mapError(f)(fx)</code></td><td><code>Fx&lt;A,E,D&gt; → Fx&lt;A,E2,D&gt;</code></td><td>translate the failure</td></tr>
+          <tr><td><code>attemptFx(fx)</code></td><td><code>Fx&lt;A,E,D&gt; → Fx&lt;Result&lt;A,E&gt;, never, D&gt;</code></td><td>the outcome as a value, so a body can inspect it</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>The namespaced form is the same functions under one name: <code>import { Fx } from 'e2'</code> then <code>Fx.map</code>, <code>Fx.retry</code>, <code>Fx.acquire</code>, and so on. <code>Fx</code> is both the type and that object, so <code>Fx&lt;User, DbError, 'Db'&gt;</code> and <code>Fx.map(…)</code> coexist without the <code>Effect.Effect</code> stutter.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="run">
+    <div class="head">
+      <div class="eyebrow">Running</div>
+      <h2>Five entry points</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Entry point</th><th>Returns</th><th>Defects</th></tr></thead>
+        <tbody>
+          <tr><td><code>run(effect, providers)</code></td><td><code>Promise&lt;Result&gt;</code></td><td>reject</td></tr>
+          <tr><td><code>runExit(effect, providers)</code></td><td><code>Promise&lt;Exit&gt;</code></td><td>in the <code>Cause</code>, never rejects</td></tr>
+          <tr><td><code>runSync(effect, providers)</code></td><td><code>Result</code></td><td>thrown</td></tr>
+          <tr><td><code>runSyncExit(effect, providers)</code></td><td><code>Exit</code></td><td>in the <code>Cause</code>, never throws</td></tr>
+          <tr><td><code>runtime(providers)</code></td><td><code>Promise&lt;Runtime&gt;</code></td><td>see <a href="services.html#runtime">Services</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>The synchronous pair never suspends. Reaching an asynchronous operation, in the effect or in any provider it builds, produces <code>Die(AsyncBoundary)</code> rather than a silent hang. Synchronicity is not tracked in the type; that would double the type surface on every constructor. Use <code>runSync</code> for tests and genuinely synchronous pipelines.</p>
+      <p>Every entry point builds the providers it is given (<a href="services.html#list">the flat list</a>), runs the effect, and closes the scope. <code>run</code> per request would rebuild the graph per request; that is what <code>runtime</code> is for.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="footgun">
+    <div class="head">
+      <div class="eyebrow">The footgun</div>
+      <h2>An effect you build and do not <b class="y">yield*</b> does nothing, silently</h2>
+    </div>
+    <div class="prose">
+      <p>Most shapes of that mistake are type errors, because <code>Fx</code> carries a <code>unique symbol</code> brand. Four are not solvable in the type system and are covered by the lint rule <code>e2/no-floating-fx</code> from <code>eslint-plugin-e2</code>, which recognises an effect by its brand without resolving the module.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Mistake</th><th>Caught by</th></tr></thead>
+        <tbody>
+          <tr><td><code>const u = db.query(id); u.name</code></td><td>types</td></tr>
+          <tr><td><code>f(db.query(id))</code> where <code>f(u: User)</code></td><td>types</td></tr>
+          <tr><td><code>return db.query(id)</code> without <b class="y">yield*</b></td><td>types, at the use site: the value's type becomes <code>'e2: this generator returns an Fx - did you forget `yield*`?'</code></td></tr>
+          <tr><td><code>const db = yield Db</code> (no <code>*</code>)</td><td>types</td></tr>
+          <tr><td><code>db.query(id)</code> as a bare statement</td><td><strong>lint</strong></td></tr>
+          <tr><td><code>if (someFx)</code>, <code>!someFx</code>, <code>someFx ? a : b</code></td><td><strong>lint</strong></td></tr>
+          <tr><td><code>await someFx</code></td><td><strong>lint</strong></td></tr>
+          <tr><td><code>[...someFx]</code>, <code>Promise.all([someFx])</code></td><td><strong>lint</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="honest">The rule deliberately does not flag a discarded <code>Result</code>: it is eager, so by the time you hold one the work has happened. A forgotten <b class="y">yield*</b> on a <code>return</code> is silent only if the effect is never used anywhere, which is not a realistic program.</p>
+  </section>
+
+  <nav class="pagenav">
+    <a href="index.html"><span class="lbl">Previous</span>← Overview</a>
+    <a href="services.html"><span class="lbl">Next</span>Services &amp; DI →</a>
+  </nav>
+</main>
+</div>
+</body>
+</html>

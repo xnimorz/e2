@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2 · Concurrency &amp; resources</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <a class="brand" href="index.html"><span class="mark">e2</span><span class="tag">documentation</span></a>
+  <ol>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="effects.html">Effects</a></li>
+    <li><a href="services.html">Services &amp; DI</a></li>
+    <li><a href="lazy-and-batch.html">Lazy init &amp; batching</a></li>
+    <li><a href="concurrency.html" aria-current="page">Concurrency &amp; resources</a></li>
+    <li><a href="workers.html">Workers</a></li>
+    <li><a href="guides.html">Guides</a></li>
+  </ol>
+  <div class="onpage">
+    <div class="lbl">On this page</div>
+    <ol>
+      <li><a href="#fibers">Fibers</a></li>
+      <li><a href="#structured">Structured concurrency</a></li>
+      <li><a href="#interruption">Interruption</a></li>
+      <li><a href="#resources">Scopes and resources</a></li>
+      <li><a href="#schedules">Schedules</a></li>
+      <li><a href="#combinators">Racing, timing out, iterating</a></li>
+    </ol>
+  </div>
+  <div class="side-foot">e2 · <a href="../README.md">README</a></div>
+</nav>
+
+<main>
+  <header class="page">
+    <div class="eyebrow">e2 · concurrency and resources</div>
+    <h1>Children die with their parent. Cleanup runs to completion. Cancellation is an <code>AbortSignal</code>.</h1>
+    <p class="lede">e2 has fibers, scopes and schedules, and no ambient context: the cancellation signal is handed to the operation that needs it, which is why the same code runs unchanged in a browser.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="fibers">
+    <div class="head">
+      <div class="eyebrow">Fibers</div>
+      <h2><code>fork</code>, <code>join</code>, <code>joinExit</code>, <code>interruptFiber</code></h2>
+    </div>
+    <div class="prose">
+      <p>A fiber is one running computation: its continuation stack, its services, its scope, its cancellation signal and its children. <code>fork(effect)</code> starts one and hands back the handle; <code>join(fiber)</code> waits and reproduces its outcome, defects and all; <code>joinExit(fiber)</code> waits and reports the outcome as a value; <code>interruptFiber(fiber, reason?)</code> requests interruption and waits for it to settle.</p>
+    </div>
+<pre class="code"><code><span class="k">const</span> program = gen(<span class="k">function*</span> () {
+  <span class="k">const</span> subscription = <span class="y">yield*</span> fork(receive.forThread(<span class="s">'thread-a'</span>, onMessage))
+  <span class="y">yield*</span> sleep(<span class="n">60</span>)
+  <span class="y">yield*</span> network.simulateIncoming(batch)
+  <span class="y">yield*</span> sleep(<span class="n">90</span>)
+  <span class="y">yield*</span> interruptFiber(subscription)     <span class="c">// runs its finally blocks and finalizers</span>
+})</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="structured">
+    <div class="head">
+      <div class="eyebrow">Structured concurrency</div>
+      <h2>A fiber cannot complete while it still has children</h2>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 220" role="img" aria-label="A parent fiber with two forked children; the parent's completion interrupts and awaits the children; the parent's abort signal propagates to them">
+        <defs><marker id="f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker><marker id="f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead fail"/></marker></defs>
+        <rect x="60" y="30" width="220" height="56" rx="6" class="node acc"/><text x="170" y="63" class="nodelbl">parent fiber</text>
+        <rect x="60" y="140" width="180" height="50" rx="6" class="node"/><text x="150" y="170" class="nodelbl">child: subscription</text>
+        <rect x="270" y="140" width="180" height="50" rx="6" class="node"/><text x="360" y="170" class="nodelbl">child: download</text>
+        <line x1="150" y1="86" x2="150" y2="138" class="edge" marker-end="url(#f1)"/>
+        <line x1="220" y1="86" x2="330" y2="138" class="edge" marker-end="url(#f1)"/>
+        <text x="86" y="118" class="edgelbl">fork</text>
+        <text x="290" y="118" class="edgelbl">fork</text>
+        <rect x="540" y="30" width="396" height="160" rx="6" class="node" style="fill:none;stroke-dasharray:4 4"/>
+        <text x="560" y="58" class="big">when the parent completes</text>
+        <text x="560" y="86" class="lbl">1. its children are interrupted</text>
+        <text x="560" y="108" class="lbl">2. it waits for every child to settle</text>
+        <text x="560" y="130" class="lbl">3. its scope's finalizers run, with the Exit</text>
+        <text x="560" y="152" class="lbl">4. only then does it settle</text>
+        <text x="560" y="178" class="sub">the parent's abort signal is forwarded to each child, deterministically</text>
+      </svg>
+      <figcaption>Forked work can never outlive what forked it. A subscription started with <code>fork</code> ends when the program that started it ends, whether that is by return, failure or interruption.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>The exception is deliberate: the fibers that build services and run <code>memo</code> and <code>batch</code> have no parent. A shared construction must not be cancelled because the first caller lost interest. They belong to the runtime's scope and are interrupted when it closes.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="interruption">
+    <div class="head">
+      <div class="eyebrow">Interruption</div>
+      <h2>Delivered once, by signal</h2>
+    </div>
+    <div class="prose">
+      <ul>
+        <li>Interruption travels by <code>AbortSignal</code>. <code>fromPromise</code> and <code>async_</code> receive the fiber's signal explicitly, so <code>fetch</code> cancels for free and there is no <code>AsyncLocalStorage</code> anywhere.</li>
+        <li>It is delivered <strong>once</strong>. Everything that runs afterwards, scope finalizers, <code>ensuring</code> handlers, a generator's <code>finally</code>, runs to completion rather than being re-interrupted. A hung finalizer therefore cannot itself be cancelled; that is the deliberate side of the trade against cleanup that silently never happens.</li>
+        <li>A generator's <code>finally</code> fires on interruption and on failure, because the interpreter calls <code>iterator.return()</code> while unwinding.</li>
+        <li><code>catchAll</code> does not see interruption. Only finalizers do, through the <code>Exit</code> they receive.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="resources">
+    <div class="head">
+      <div class="eyebrow">Scopes and resources</div>
+      <h2><code>acquire</code>, <code>addFinalizer</code>, <code>scoped</code>, <code>ensuring</code></h2>
+    </div>
+    <div class="prose">
+      <p>A scope is a stack of finalizers closed with the <code>Exit</code> that triggered it. Finalizers receive that <code>Exit</code>, so they can tell success from failure from interruption: commit versus rollback, or "the request was cancelled, do not bill for it". Closing is resilient: a finalizer that fails does not stop the rest.</p>
+      <p>Every runtime supplies a root scope, and every provider body runs in it, which is why <code>Scope</code> never appears in a provider's <code>Needs</code>. A request that wants its own scope wraps itself in <code>scoped(effect)</code>, which discharges the requirement.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Operation</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>acquire(open, close, onError?)</code></td><td>opens a resource, possibly asynchronously, and registers <code>close(resource, exit)</code> on the ambient scope. Without <code>onError</code> a failure to open is a defect.</td></tr>
+          <tr><td><code>addFinalizer((exit) =&gt; fx)</code></td><td>registers a finalizer on the ambient scope</td></tr>
+          <tr><td><code>scoped(effect)</code></td><td>runs the effect with a fresh scope, closed when it settles; removes <code>'Scope'</code> from its dependencies</td></tr>
+          <tr><td><code>ensuring(finalizer)(effect)</code></td><td>runs a finalizer when the effect settles, whatever the outcome</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 150" role="img" aria-label="Resources acquired in order are released in reverse order when the runtime closes">
+        <defs><marker id="r1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <text x="24" y="30" class="sub">acquired, during construction and later on demand</text>
+        <rect x="24" y="42" width="150" height="36" rx="5" class="node pass"/><text x="99" y="65" class="nodelbl">config</text>
+        <rect x="190" y="42" width="150" height="36" rx="5" class="node pass"/><text x="265" y="65" class="nodelbl">connection</text>
+        <rect x="356" y="42" width="150" height="36" rx="5" class="node pass"/><text x="431" y="65" class="nodelbl">store (lazy)</text>
+        <line x1="174" y1="60" x2="188" y2="60" class="edge"/><line x1="340" y1="60" x2="354" y2="60" class="edge"/>
+        <text x="600" y="30" class="sub">released at rt.close(), most recent first</text>
+        <rect x="600" y="42" width="100" height="36" rx="5" class="node"/><text x="650" y="65" class="nodelbl">store</text>
+        <rect x="714" y="42" width="110" height="36" rx="5" class="node"/><text x="769" y="65" class="nodelbl">connection</text>
+        <rect x="838" y="42" width="98" height="36" rx="5" class="node"/><text x="887" y="65" class="nodelbl">config</text>
+        <line x1="700" y1="60" x2="712" y2="60" class="edge"/><line x1="824" y1="60" x2="836" y2="60" class="edge"/>
+        <text x="24" y="120" class="sub">a resource acquired inside a memo or batch run registers on the scope the cell was created in — the runtime's — not on the request that triggered it</text>
+      </svg>
+      <figcaption>Whichever order things were actually acquired in, including lazily, teardown reverses it.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="schedules">
+    <div class="head">
+      <div class="eyebrow">Schedules</div>
+      <h2><code>retry</code> and <code>repeat</code>, driven by a <code>Schedule</code></h2>
+    </div>
+    <div class="prose">
+      <p>A <code>Schedule</code> answers one question: given the attempt number and the last error, how long until the next try, or stop. <code>retry(schedule)(effect)</code> retries on expected failure; <code>repeat(schedule)(effect)</code> re-runs on success. Both leave the effect's type unchanged.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Constructor</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>Schedule.recurs(n)</code></td><td><code>n</code> more times, immediately</td></tr>
+          <tr><td><code>Schedule.spaced(ms)</code></td><td>forever, every <code>ms</code></td></tr>
+          <tr><td><code>Schedule.exponential(base, factor = 2)</code></td><td><code>base</code>, <code>base·factor</code>, <code>base·factor²</code>, …</td></tr>
+          <tr><td><code>Schedule.stop</code></td><td>never</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Modifier</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>.upTo(n)</code></td><td>at most <code>n</code> attempts</td></tr>
+          <tr><td><code>.maxDelay(ms)</code></td><td>cap each delay</td></tr>
+          <tr><td><code>.jittered(factor = 0.5)</code></td><td>randomise each delay by up to <code>factor</code></td></tr>
+          <tr><td><code>.whileError(pred)</code></td><td>only while the error satisfies <code>pred</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre class="code"><code><span class="k">const</span> resilient = retry(
+  Schedule.exponential(<span class="n">50</span>).jittered().maxDelay(<span class="n">2_000</span>).upTo(<span class="n">5</span>).whileError((e: <span class="t">NetworkError</span>) =&gt; e.reason === <span class="s">'timeout'</span>)
+)(server.fetchOne(threadId, id))</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="combinators">
+    <div class="head">
+      <div class="eyebrow">Racing, timing out, iterating</div>
+      <h2><code>race</code>, <code>timeout</code>, <code>allConcurrent</code>, <code>forEach</code></h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Operation</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>race(left, right)</code></td><td>the first to settle wins; the other is interrupted</td></tr>
+          <tr><td><code>timeout(ms, onTimeout)(effect)</code></td><td>fails with <code>onTimeout()</code> if the effect has not settled in time</td></tr>
+          <tr><td><code>allConcurrent([a, b, c])</code></td><td>runs all, returns a tuple of values; the first failure interrupts the rest</td></tr>
+          <tr><td><code>forEach(f, { concurrency })(items)</code></td><td>maps items to effects; <code>concurrency</code> is a number or <code>'unbounded'</code>, default 1</td></tr>
+          <tr><td><code>sleep(ms)</code></td><td>completes after <code>ms</code>, cancelling its timer if interrupted</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <nav class="pagenav">
+    <a href="lazy-and-batch.html"><span class="lbl">Previous</span>← Lazy init &amp; batching</a>
+    <a href="workers.html"><span class="lbl">Next</span>Workers →</a>
+  </nav>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2 documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <a class="brand" href="index.html"><span class="mark">e2</span><span class="tag">documentation</span></a>
+  <ol>
+    <li><a href="index.html" aria-current="page">Overview</a></li>
+    <li><a href="effects.html">Effects</a></li>
+    <li><a href="services.html">Services &amp; DI</a></li>
+    <li><a href="lazy-and-batch.html">Lazy init &amp; batching</a></li>
+    <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
+    <li><a href="workers.html">Workers</a></li>
+    <li><a href="guides.html">Guides</a></li>
+  </ol>
+  <div class="onpage">
+    <div class="lbl">On this page</div>
+    <ol>
+      <li><a href="#ideas">Three ideas</a></li>
+      <li><a href="#start">Quick start</a></li>
+      <li><a href="#surface">The whole surface</a></li>
+      <li><a href="#map">Where to go</a></li>
+      <li><a href="#develop">Development</a></li>
+    </ol>
+  </div>
+  <div class="side-foot">e2 · <a href="../README.md">README</a><br>prototype · <a href="../prototype/COMPARISON.md">comparison with Effect</a></div>
+</nav>
+
+<main>
+  <header class="page">
+    <div class="eyebrow">e2 · overview</div>
+    <h1>Dependency injection and control flow for TypeScript, with nothing else attached</h1>
+    <p class="lede">e2 is a re-think of <a href="https://effect.website">Effect</a> scoped to the two things a program cannot do without: knowing what it depends on, and saying what happens next. No Schema, no Stream, no platform package. It runs on Bun and in the browser with no decorators, no build step and no runtime dependencies. The whole worker of the reference application, application code included, is 57&nbsp;KB.</p>
+    <div class="chips">
+      <span class="chip"><span class="k">type</span> Fx&lt;Value, Error, Dependency&gt;</span>
+      <span class="chip"><span class="k">deps</span> inferred from <span class="y" style="font-size:12px">yield*</span></span>
+      <span class="chip"><span class="k">wiring</span> one flat list</span>
+      <span class="chip"><span class="k">lazy</span> memo · lazy · batch</span>
+      <span class="chip"><span class="k">workers</span> serve a service by key</span>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="ideas">
+    <div class="head">
+      <div class="eyebrow">Three ideas</div>
+      <h2>Everything in e2 is one of these three things</h2>
+    </div>
+
+    <div class="prose">
+      <p><strong>An effect is a description.</strong> <code>Fx&lt;Value, Error, Dependency&gt;</code> is a value that says what to compute, how it can fail, and which services it needs. Building one does nothing. A generator body sequences effects with <b class="y">yield*</b>, and an interpreter runs the tree later, against a set of services, producing a <code>Result</code>.</p>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 170" role="img" aria-label="A generator body becomes an Fx tree, which the interpreter runs against services to produce a Result">
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <rect x="24" y="44" width="200" height="72" rx="6" class="node ink"/>
+        <text x="124" y="74" class="nodelbl onink" style="fill:var(--code-ink)">gen(function* () {…})</text>
+        <text x="124" y="96" class="sub" text-anchor="middle" style="fill:var(--code-gutter)">a body that yield*s</text>
+        <line x1="224" y1="80" x2="286" y2="80" class="edge" marker-end="url(#ah)"/>
+        <rect x="288" y="44" width="180" height="72" rx="6" class="node acc"/>
+        <text x="378" y="74" class="nodelbl">Fx tree</text>
+        <text x="378" y="96" class="sub" text-anchor="middle">immutable, re-runnable</text>
+        <line x1="468" y1="80" x2="530" y2="80" class="edge" marker-end="url(#ah)"/>
+        <rect x="532" y="44" width="180" height="72" rx="6" class="node"/>
+        <text x="622" y="74" class="nodelbl">interpreter</text>
+        <text x="622" y="96" class="sub" text-anchor="middle">run / runtime, fibers</text>
+        <line x1="712" y1="80" x2="774" y2="80" class="edge" marker-end="url(#ah)"/>
+        <rect x="776" y="44" width="160" height="72" rx="6" class="node pass"/>
+        <text x="856" y="74" class="nodelbl">Result</text>
+        <text x="856" y="96" class="sub" text-anchor="middle">Ok | Err</text>
+        <path d="M 622 116 C 622 150, 622 150, 622 150" class="edge faint"/>
+        <text x="622" y="160" class="sub" text-anchor="middle">services, by name: Db, Logger, Config</text>
+      </svg>
+      <figcaption>Nothing happens until <code>run</code>. That is what makes an effect testable, retryable, and cancellable.</figcaption>
+    </figure>
+
+    <div class="prose">
+      <p><strong>Dependencies are names, and they are inferred.</strong> A service is a contract plus a key. Using it six frames deep with <code>yield* Db</code> puts <code>'Db'</code> into the effect's type without touching any intermediate signature. Wiring is one flat, unordered list of providers, each built on first demand; a missing one is a compile error that names it.</p>
+    </div>
+    <pre class="code"><code><span class="k">const</span> getUser = fx(<span class="k">function*</span> (id: <span class="t">string</span>) {
+  <span class="k">const</span> db  = <span class="y">yield*</span> Db
+  <span class="k">const</span> log = <span class="y">yield*</span> Logger
+  <span class="y">yield*</span> log.info(<span class="s">`load ${id}`</span>)
+  <span class="k">return</span> <span class="y">yield*</span> db.query(id)
+})
+<span class="c">// (id: string) => Fx&lt;User, DbError, 'Db' | 'Logger'&gt;</span>
+
+<span class="k">await</span> run(getUser(<span class="s">'1'</span>), [DbLive, LoggerLive, ConfigLive])   <span class="c">// order is irrelevant</span>
+<span class="k">await</span> run(getUser(<span class="s">'1'</span>), [DbLive, ConfigLive])
+<span class="c">// Type 'Fx&lt;User, DbError, "Db" | "Logger"&gt;' is not assignable to type '"e2: missing service Logger"'.</span></code></pre>
+
+    <div class="prose">
+      <p><strong>One cell does the sharing.</strong> "Build once, let everyone who asks share it, let a failure be retried" is the same mechanism whether the thing being built is a service, a lazily opened database, or a batch of writes. The runtime keeps one cell per provider; <code>memo</code> hands out anonymous ones; <code>batch</code> collects items into one run. Because it is one implementation, they cannot disagree about joining, failure or teardown.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="start">
+    <div class="head">
+      <div class="eyebrow">Quick start</div>
+      <h2>A service, an implementation, a program, a run</h2>
+    </div>
+    <div class="prose">
+      <p>The repository is the package: <code>bun install</code> at the root, and import from <code>e2</code>, which resolves to <code>src/index.ts</code>. TypeScript 5.5 or later.</p>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">1</span><code>a contract and its key share a name</code></div>
+<pre class="code"><code><span class="k">import</span> { service, sync, run, fx, <span class="k">type</span> <span class="t">Fx</span> } <span class="k">from</span> <span class="s">'e2'</span>
+
+<span class="k">export interface</span> <span class="t">Config</span> { <span class="k">readonly</span> url: <span class="t">string</span> }
+<span class="k">export const</span> Config = service&lt;<span class="t">Config</span>&gt;()(<span class="s">'Config'</span>)
+
+<span class="k">export interface</span> <span class="t">Db</span> { query(id: <span class="t">string</span>): <span class="t">Fx</span>&lt;<span class="t">User</span>, <span class="t">DbError</span>&gt; }
+<span class="k">export const</span> Db = service&lt;<span class="t">Db</span>&gt;()(<span class="s">'Db'</span>)   <span class="c">// type Db is the contract, value Db is the key</span></code></pre>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">2</span><code>an implementation yields what it needs</code></div>
+<pre class="code"><code><span class="k">export const</span> ConfigLive = Config.of({ url: <span class="s">'postgres://localhost'</span> })
+
+<span class="k">export const</span> DbLive = Db.make(<span class="k">function*</span> () {
+  <span class="k">const</span> config = <span class="y">yield*</span> Config            <span class="c">// this is the dependency declaration</span>
+  <span class="k">const</span> pool = <span class="y">yield*</span> acquire(() =&gt; connect(config.url), (p) =&gt; p.close())
+  <span class="k">return</span> { query: (id) =&gt; sync(() =&gt; pool.find(id)) }
+})
+<span class="c">// Provider&lt;'Db', 'Config', never&gt;</span></code></pre>
+    </div>
+    <div class="figure">
+      <div class="caption"><span class="lbl">3</span><code>a program, and the list it runs against</code></div>
+<pre class="code"><code><span class="k">const</span> getUser = fx(<span class="k">function*</span> (id: <span class="t">string</span>) {
+  <span class="k">const</span> db = <span class="y">yield*</span> Db
+  <span class="k">return</span> <span class="y">yield*</span> db.query(id)
+})
+
+<span class="k">const</span> result = <span class="k">await</span> run(getUser(<span class="s">'1'</span>), [DbLive, ConfigLive])
+<span class="c">// Result&lt;User, DbError&gt;</span>
+<span class="k">if</span> (result.ok) console.log(result.value)
+
+<span class="c">// A long-lived process builds the graph once:</span>
+<span class="k">await using</span> rt = <span class="k">await</span> runtime([DbLive, ConfigLive])
+<span class="k">await</span> rt.run(getUser(<span class="s">'1'</span>))</code></pre>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="surface">
+    <div class="head">
+      <div class="eyebrow">The whole surface</div>
+      <h2>Everything you can import, grouped by what it is for</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Area</th><th>Names</th><th>Page</th></tr></thead>
+        <tbody>
+          <tr><td>Build an effect</td><td><code>gen</code> <code>fx</code> <code>sync</code> <code>suspend</code> <code>async_</code> <code>fromPromise</code> <code>sleep</code> <code>ok</code>/<code>succeed</code> <code>err</code>/<code>fail</code></td><td><a href="effects.html">Effects</a></td></tr>
+          <tr><td>Transform one</td><td><code>map</code> <code>flatMap</code> <code>catchAll</code> <code>mapError</code> <code>attemptFx</code></td><td><a href="effects.html#combinators">Effects</a></td></tr>
+          <tr><td>Outcomes</td><td><code>Result</code> (<code>Ok</code>, <code>Err</code>) · <code>Cause</code> (<code>Fail</code>, <code>Die</code>, <code>Interrupt</code>) · <code>Exit</code></td><td><a href="effects.html#errors">Effects</a></td></tr>
+          <tr><td>Define a service</td><td><code>service&lt;Api&gt;()('Name')</code> · <code>service('Name', function* () {})</code></td><td><a href="services.html">Services</a></td></tr>
+          <tr><td>Implement one</td><td><code>Db.make(function* () {})</code> · <code>Db.of(value)</code> · <code>lazy(provider)</code></td><td><a href="services.html#implement">Services</a></td></tr>
+          <tr><td>Run</td><td><code>run</code> <code>runExit</code> <code>runSync</code> <code>runSyncExit</code> <code>runtime</code> → <code>rt.run</code> <code>rt.fork</code> <code>rt.graph</code> <code>rt.close</code></td><td><a href="services.html#runtime">Services</a></td></tr>
+          <tr><td>Share and defer</td><td><code>memo(fx, { eager })</code> · <code>batch(run, { window, maxSize })</code></td><td><a href="lazy-and-batch.html">Lazy init &amp; batching</a></td></tr>
+          <tr><td>Fibers</td><td><code>fork</code> <code>join</code> <code>joinExit</code> <code>interruptFiber</code> <code>race</code> <code>allConcurrent</code> <code>timeout</code> <code>forEach</code></td><td><a href="concurrency.html">Concurrency</a></td></tr>
+          <tr><td>Resources</td><td><code>scoped</code> <code>acquire</code> <code>addFinalizer</code> <code>ensuring</code></td><td><a href="concurrency.html#resources">Concurrency</a></td></tr>
+          <tr><td>Policies</td><td><code>retry</code> <code>repeat</code> <code>Schedule</code> (<code>recurs</code> <code>spaced</code> <code>exponential</code> <code>stop</code>, <code>.upTo</code> <code>.maxDelay</code> <code>.jittered</code> <code>.whileError</code>)</td><td><a href="concurrency.html#schedules">Concurrency</a></td></tr>
+          <tr><td>Workers</td><td><code>serve</code> <code>link</code> <code>remote</code> (in the reference application's bridge, not the core)</td><td><a href="workers.html">Workers</a></td></tr>
+          <tr><td>Lint</td><td><code>eslint-plugin-e2</code>, rule <code>no-floating-fx</code></td><td><a href="effects.html#footgun">Effects</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="map">
+    <div class="head">
+      <div class="eyebrow">Where to go</div>
+      <h2>Read in order, or jump to what you need</h2>
+    </div>
+    <div class="cards">
+      <a class="card" href="effects.html"><h3>Effects</h3><p>The <code>Fx</code> type, the four ways to build one, <code>Result</code> as its pure subset, the three failure channels, and the one footgun.</p><span class="go">effects.html →</span></a>
+      <a class="card" href="services.html"><h3>Services &amp; DI</h3><p>Contracts and keys, implementations that yield what they need, the flat list, demand-driven construction, and the diagnostics.</p><span class="go">services.html →</span></a>
+      <a class="card" href="lazy-and-batch.html"><h3>Lazy init &amp; batching</h3><p><code>memo</code> for "open once, on first use", <code>batch</code> for "a hundred puts, one write", and why they are the same cell.</p><span class="go">lazy-and-batch.html →</span></a>
+      <a class="card" href="concurrency.html"><h3>Concurrency &amp; resources</h3><p>Fibers that die with their parent, interruption by <code>AbortSignal</code>, scopes that close in reverse, and schedules.</p><span class="go">concurrency.html →</span></a>
+      <a class="card" href="workers.html"><h3>Workers</h3><p>A service key is the same key on either side of a worker. <code>serve</code> it there, <code>remote</code> it here, and nothing in between.</p><span class="go">workers.html →</span></a>
+      <a class="card" href="guides.html"><h3>Guides</h3><p>Step by step: define a service, compose an app, test with doubles, open a database lazily, coalesce writes, cross a worker.</p><span class="go">guides.html →</span></a>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="develop">
+    <div class="head">
+      <div class="eyebrow">Development</div>
+      <h2>Checks</h2>
+    </div>
+    <pre class="code"><code>bun install
+bun run check          <span class="c"># typecheck + lint + tests, including both prototype suites</span>
+bun run smoke:browser  <span class="c"># build dist/e2-smoke.js, then open dist/smoke.html</span></code></pre>
+    <div class="prose">
+      <p>The compile-time diagnostics are tested as a feature: <code>src/tests/diagnostics.spec.ts</code> shells out to <code>tsc</code> and pins the exact wording, so a TypeScript upgrade that degrades a message turns CI red. The type-level proofs behind the design live in <code>spike/</code>.</p>
+    </div>
+  </section>
+
+  <nav class="pagenav">
+    <span></span>
+    <a href="effects.html"><span class="lbl">Next</span>Effects →</a>
+  </nav>
+</main>
+</div>
+</body>
+</html>

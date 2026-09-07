@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2 · Workers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <a class="brand" href="index.html"><span class="mark">e2</span><span class="tag">documentation</span></a>
+  <ol>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="effects.html">Effects</a></li>
+    <li><a href="services.html">Services &amp; DI</a></li>
+    <li><a href="lazy-and-batch.html">Lazy init &amp; batching</a></li>
+    <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
+    <li><a href="workers.html" aria-current="page">Workers</a></li>
+    <li><a href="guides.html">Guides</a></li>
+  </ol>
+  <div class="onpage">
+    <div class="lbl">On this page</div>
+    <ol>
+      <li><a href="#idea">The idea</a></li>
+      <li><a href="#api">serve, link, remote</a></li>
+      <li><a href="#rule">What can cross</a></li>
+      <li><a href="#streams">Streams</a></li>
+      <li><a href="#codec">The codec</a></li>
+      <li><a href="#under">Under the hood</a></li>
+    </ol>
+  </div>
+  <div class="side-foot">e2 · <a href="../README.md">README</a><br>source · <a href="../prototype/e2/src/bridge/">prototype/e2/src/bridge</a></div>
+</nav>
+
+<main>
+  <header class="page">
+    <div class="eyebrow">e2 · workers</div>
+    <h1>A service key is the same key on either side of a worker</h1>
+    <p class="lede">Because a service is looked up by name and its contract is TypeScript, a service can be served across a worker boundary by key. The worker <code>serve</code>s it; the main thread gets a provider for the same key from <code>remote</code>; a consumer does <code>yield* Mps</code> and cannot tell which side it is on. The bridge that does this lives in the reference application, not the core, since it is platform code.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="idea">
+    <div class="head">
+      <div class="eyebrow">The idea</div>
+      <h2>The contract is the protocol</h2>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 250" role="img" aria-label="Main thread: MessageList yields Mps, a proxy provider; the call crosses the worker boundary by service name and member; the worker resolves the real Mps from its runtime">
+        <defs><marker id="w1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead acc"/></marker><marker id="w2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <rect x="24" y="24" width="420" height="200" rx="8" class="node" style="fill:none;stroke-dasharray:4 4"/>
+        <text x="40" y="48" class="big">main thread</text>
+        <rect x="40" y="68" width="170" height="48" rx="6" class="node"/><text x="125" y="97" class="nodelbl">MessageList</text>
+        <rect x="260" y="68" width="170" height="48" rx="6" class="node acc"/><text x="345" y="90" class="nodelbl">Mps</text><text x="345" y="106" class="sub" text-anchor="middle">remote(Worker, [Mps])</text>
+        <line x1="210" y1="92" x2="258" y2="92" class="edge acc" marker-end="url(#w1)"/>
+        <text x="234" y="84" class="edgelbl acc" text-anchor="middle">yield*</text>
+        <rect x="40" y="150" width="390" height="48" rx="6" class="node"/><text x="235" y="172" class="nodelbl">Worker = link('MpsWorker', url, codec)</text><text x="235" y="188" class="sub" text-anchor="middle">one worker, shared by every remote key</text>
+        <line x1="345" y1="116" x2="345" y2="148" class="edge faint"/>
+        <rect x="516" y="24" width="420" height="200" rx="8" class="node" style="fill:none;stroke-dasharray:4 4"/>
+        <text x="532" y="48" class="big">worker</text>
+        <rect x="532" y="68" width="170" height="48" rx="6" class="node pass"/><text x="617" y="90" class="nodelbl">Mps</text><text x="617" y="106" class="sub" text-anchor="middle">lazy(MpsLive), real</text>
+        <rect x="726" y="68" width="194" height="48" rx="6" class="node"/><text x="823" y="90" class="nodelbl">LocalStore, Crypto, …</text><text x="823" y="106" class="sub" text-anchor="middle">its dependencies</text>
+        <line x1="702" y1="92" x2="724" y2="92" class="edge" marker-end="url(#w2)"/>
+        <rect x="532" y="150" width="388" height="48" rx="6" class="node"/><text x="726" y="172" class="nodelbl">serve(rt, [Mps, Send, Receive, …], codec)</text><text x="726" y="188" class="sub" text-anchor="middle">by key; resolved from the runtime on the first call</text>
+        <path d="M 430 174 L 530 174" class="edge acc" marker-end="url(#w1)"/>
+        <text x="480" y="166" class="edgelbl acc" text-anchor="middle">{ service: 'Mps', member: 'ingest', args }</text>
+        <text x="480" y="240" class="sub" text-anchor="middle">the same key, the same contract, on both sides</text>
+      </svg>
+      <figcaption>Nothing is written per method. The method list, the client contract and its proxy, and the handler table all disappear; what remains of the protocol is the error codec.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="api">
+    <div class="head">
+      <div class="eyebrow">The API</div>
+      <h2>Three functions</h2>
+    </div>
+    <div class="compare">
+      <div class="figure">
+        <div class="caption"><span class="lbl">worker</span><code>worker/main.ts</code></div>
+<pre class="code"><code><span class="k">const</span> rt = <span class="k">await</span> runtime([
+  Config, NetworkLive, LocalStoreLive, MediaStoreLive, ServerFetchLive,
+  CoreValidationLive, MediaStageLive, SearchIndexLive, SearchStageLive,
+  PreStagesLive, PostStagesLive, CategorisersLive, HandlersLive,
+  lazy(CryptoLive), lazy(MpsLive), lazy(SendLive), ReceiveLive,
+])
+
+serve(rt, [Mps, Send, Receive, SearchIndex, LocalStore, ServerFetch, Network, MediaStore], codec)</code></pre>
+      </div>
+      <div class="figure">
+        <div class="caption"><span class="lbl">main thread</span><code>the composition root</code></div>
+<pre class="code"><code><span class="k">const</span> Worker = link(<span class="s">'MpsWorker'</span>, <span class="k">new</span> <span class="t">URL</span>(<span class="s">'../worker/main.ts'</span>, <span class="k">import</span>.meta.url), codec)
+
+<span class="k">const</span> rt = <span class="k">await</span> runtime([
+  MessageListLive,
+  Worker,
+  ...remote(Worker, [Mps, Send, Receive, SearchIndex]),
+])
+
+<span class="c">// MessageListLive does `yield* Mps`, `yield* Send`, `yield* Receive`</span>
+<span class="c">// and would be unchanged if they ran in-process.</span></code></pre>
+      </div>
+    </div>
+    <dl class="kv">
+      <dt>serve(rt, keys, codec)</dt><dd>exposes the listed services over the worker's message port. Builds nothing; each service is demanded from <code>rt</code> on its first remote call, so a <code>lazy()</code> one stays lazy. Compile-time checks: every key is servable, and every key is provided by <code>rt</code>.</dd>
+      <dt>link(name, url, codec)</dt><dd>a worker as a service with a default: opened when first needed, terminated when the runtime closes. Every remote key for this worker shares it.</dd>
+      <dt>remote(Worker, keys)</dt><dd>a provider per key, each depending only on the link. The same servable check as <code>serve</code>.</dd>
+    </dl>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="rule">
+    <div class="head">
+      <div class="eyebrow">What can cross</div>
+      <h2>A member is servable if it is one of three shapes</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Shape</th><th>Example</th><th>Served as</th></tr></thead>
+        <tbody>
+          <tr><td>an <code>Fx</code> value</td><td><code>count: Fx&lt;number&gt;</code></td><td>a zero-argument call</td></tr>
+          <tr><td>a method of cloneable arguments returning an <code>Fx</code></td><td><code>get(threadId, id): Fx&lt;…&gt;</code></td><td>a call</td></tr>
+          <tr><td>a method whose <em>last</em> argument is a callback and which returns <code>Fx&lt;never, E&gt;</code></td><td><code>forThread(id, onMessage): Fx&lt;never, E&gt;</code></td><td>a stream</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>Anything else cannot: a plain value, a method returning a plain value, a callback anywhere but last, a callback on a method that completes. The diagnostic names the service and the member, and it fires at the entry of the list that is wrong.</p>
+    </div>
+    <div class="diagnostic">
+      <header><span class="code">TS2322</span><span>a plain value in the contract</span></header>
+      <pre>Type 'Service&lt;"Crypto", Crypto&gt;' is not assignable to type 'Service&lt;"Crypto", Crypto&gt; &amp; <span class="hi">"e2: Crypto.deviceId cannot cross a worker boundary - only Fx values, Fx-returning methods, and trailing-callback streams can"</span>'.</pre>
+    </div>
+    <div class="diagnostic">
+      <header><span class="code">TS2345</span><span>serving what the runtime does not provide</span></header>
+      <pre>Argument of type 'Runtime&lt;"Config" | "Crypto"&gt;' is not assignable to parameter of type 'Runtime&lt;"Config" | "Crypto"&gt; &amp; <span class="hi">"e2: serve: Mps is not provided by this runtime"</span>'.</pre>
+    </div>
+    <div class="prose">
+      <p>Three members in the reference application failed the rule when it was introduced, and each fix improved the contract. <code>Mps.describe</code> returned a plain object and became an <code>Fx</code> value. <code>Network.onInbound</code> returned an unsubscribe function and became <code>inbound(onBatch): Fx&lt;never&gt;</code>, which <code>Receive</code> now forks, so unsubscribing is structural. <code>Crypto.deviceId</code> is a plain value, and <code>Crypto</code> is simply not served.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="streams">
+    <div class="head">
+      <div class="eyebrow">Streams</div>
+      <h2>A trailing callback and a never-completing effect</h2>
+    </div>
+    <div class="prose">
+      <p>e2 has no <code>Stream</code>. A subscription is an effect that never completes on its own, delivers each value to a callback, and runs until interrupted. Fork it to subscribe, interrupt the fiber to unsubscribe, which structured concurrency does for you when the parent finishes. The bridge recognises the shape on both sides: on the main thread a trailing function argument selects the stream path; in the worker <code>serve</code> supplies the callback and turns each invocation into an <code>event</code> reply, until the caller's fiber is interrupted and a <code>cancel</code> crosses back.</p>
+    </div>
+<pre class="code"><code><span class="c">// the contract, unchanged by the boundary</span>
+<span class="k">readonly</span> forThread: (threadId: <span class="t">string</span>, onMessage: (message: <span class="t">Message</span>) =&gt; <span class="k">void</span>) =&gt; <span class="t">Fx</span>&lt;<span class="k">never</span>, <span class="t">DomainError</span>&gt;
+
+<span class="c">// the consumer, on the main thread</span>
+<span class="k">const</span> subscription = <span class="y">yield*</span> fork(receive.forThread(<span class="s">'thread-a'</span>, (message) =&gt; render([message])))
+<span class="c">// … later, or when the parent ends:</span>
+<span class="y">yield*</span> interruptFiber(subscription)</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="codec">
+    <div class="head">
+      <div class="eyebrow">The codec</div>
+      <h2>The one thing a contract cannot say</h2>
+    </div>
+    <div class="prose">
+      <p>Structured clone drops prototypes. A <code>NotFound</code> thrown in the worker arrives on the main thread as a plain object, and something has to rebuild it. That is the codec, <code>{ encode, decode }</code>, passed to both <code>serve</code> and <code>link</code>, and it is the application's. It is hand-written, one case per error class, and it is exactly the kind of code that rots. Effect's <code>Schema.TaggedRequest</code> generates the equivalent; that is a genuine advantage of carrying a schema, noted plainly.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="under">
+    <div class="head">
+      <div class="eyebrow">Under the hood</div>
+      <h2>No manifest, no glue</h2>
+    </div>
+    <div class="prose">
+      <ul>
+        <li>The remote object is a <code>Proxy</code>. Every member you read on it is an object that is <strong>both callable and a <code>Suspend</code> instruction</strong>, so <code>local.get(a, b)</code>, <code>yield* local.count</code> and <code>Fx.map(f)(local.count)</code> all work without the client knowing which members are methods and which are values.</li>
+        <li>The worker decides per request: it does <code>yield* Key</code>, looks at the real member, and calls it or yields it. A member that does not exist is a defect with the service and member in the message.</li>
+        <li>Every request is a forked fiber in the worker, so cancellation is uniform: a unary call and a stream are interrupted the same way, and their finalizers run.</li>
+        <li>The proxy's round-trip cost is not measurable against the transport: 0.020 ms before, 0.023 ms after, in the reference bench.</li>
+      </ul>
+    </div>
+    <div class="callout">
+      <span class="t">Why Effect cannot mirror this</span>
+      A <code>Context.Tag</code> carries no runtime shape, and Effect's position is Schema at every boundary, so it keeps one <code>TaggedRequest</code> class per method plus a handler per request. That is safer on an untrusted wire; on a same-origin worker it costs a class per method. Both positions are reasonable. This one is e2's.
+    </div>
+  </section>
+
+  <nav class="pagenav">
+    <a href="concurrency.html"><span class="lbl">Previous</span>← Concurrency &amp; resources</a>
+    <a href="guides.html"><span class="lbl">Next</span>Guides →</a>
+  </nav>
+</main>
+</div>
+</body>
+</html>

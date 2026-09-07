@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2 · Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <a class="brand" href="index.html"><span class="mark">e2</span><span class="tag">documentation</span></a>
+  <ol>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="effects.html">Effects</a></li>
+    <li><a href="services.html">Services &amp; DI</a></li>
+    <li><a href="lazy-and-batch.html">Lazy init &amp; batching</a></li>
+    <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
+    <li><a href="workers.html">Workers</a></li>
+    <li><a href="guides.html" aria-current="page">Guides</a></li>
+  </ol>
+  <div class="onpage">
+    <div class="lbl">On this page</div>
+    <ol>
+      <li><a href="#service">Define and implement a service</a></li>
+      <li><a href="#compose">Compose an application</a></li>
+      <li><a href="#test">Test with doubles</a></li>
+      <li><a href="#lazy">Open a database lazily</a></li>
+      <li><a href="#batch">Coalesce writes</a></li>
+      <li><a href="#worker">Put a service in a worker</a></li>
+      <li><a href="#extend">Extend the pipeline</a></li>
+    </ol>
+  </div>
+  <div class="side-foot">e2 · <a href="../README.md">README</a><br>reference app · <a href="../prototype/e2/src/">prototype/e2/src</a></div>
+</nav>
+
+<main>
+  <header class="page">
+    <div class="eyebrow">e2 · guides</div>
+    <h1>Seven things you will actually do, in order</h1>
+    <p class="lede">Each guide is a sequence of steps with the code you would write. The examples are taken from the reference application, an end-to-end-encrypted messaging client split across a main thread and a worker, so every snippet has a real home in <code>prototype/e2/src</code>.</p>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="service">
+    <div class="head">
+      <div class="eyebrow">Guide 1</div>
+      <h2>Define and implement a service</h2>
+    </div>
+    <ol class="steps">
+      <li><div><b>Write the contract as an interface, and the key with the same name.</b>
+<pre class="code"><code><span class="k">export interface</span> <span class="t">Crypto</span> {
+  <span class="k">readonly</span> seal: (inbound: <span class="t">Inbound</span>) =&gt; <span class="t">Fx</span>&lt;<span class="t">Envelope</span>&gt;
+  <span class="k">readonly</span> open: (envelope: <span class="t">Envelope</span>) =&gt; <span class="t">Fx</span>&lt;<span class="t">Inbound</span>, <span class="t">CryptoError</span>&gt;
+}
+<span class="k">export const</span> Crypto = service&lt;<span class="t">Crypto</span>&gt;()(<span class="s">'Crypto'</span>)</code></pre>
+      </div></li>
+      <li><div><b>Implement it with <code>make</code>. Yield what you need; that is the dependency declaration.</b>
+<pre class="code"><code><span class="k">export const</span> CryptoLive = Crypto.make(<span class="k">function*</span> () {
+  <span class="k">const</span> config = <span class="y">yield*</span> Config
+  <span class="k">const</span> cipher = (text: <span class="t">string</span>, shift: <span class="t">number</span>) =&gt; <span class="c">/* … */</span>
+  <span class="k">return</span> {
+    seal: (inbound) =&gt; sync(() =&gt; ({ ...inbound, ciphertext: cipher(JSON.stringify(inbound.payload), <span class="n">1</span>) })),
+    open: (envelope) =&gt; gen(<span class="k">function*</span> () {
+      <span class="k">if</span> (envelope.ciphertext.startsWith(<span class="s">'!'</span>)) <span class="k">return</span> <span class="y">yield*</span> err(<span class="k">new</span> <span class="t">CryptoError</span>(envelope.id))
+      <span class="k">return</span> { ...envelope, payload: JSON.parse(cipher(envelope.ciphertext, -<span class="n">1</span>)) }
+    }),
+  }
+})
+<span class="c">// Provider&lt;'Crypto', 'Config', never&gt;</span></code></pre>
+      </div></li>
+      <li><div><b>Check the parameter types came from the contract.</b><p>Hover <code>inbound</code> in <code>seal</code>: it is <code>Inbound</code> with no annotation, because the contract bounds the returned object. A method that reaches for a service the contract does not mention is rejected here, not discovered by a caller.</p></div></li>
+      <li><div><b>Use it from anywhere, without threading it through.</b>
+<pre class="code"><code><span class="k">const</span> absorb = (envelope: <span class="t">Envelope</span>) =&gt; gen(<span class="k">function*</span> () {
+  <span class="k">const</span> crypto = <span class="y">yield*</span> Crypto
+  <span class="k">const</span> inbound = <span class="y">yield*</span> crypto.open(envelope)
+  <span class="k">return</span> <span class="y">yield*</span> ingest(inbound)
+})
+<span class="c">// Fx&lt;readonly Message[], CryptoError | DomainError, 'Crypto' | …&gt;</span></code></pre>
+      </div></li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="compose">
+    <div class="head">
+      <div class="eyebrow">Guide 2</div>
+      <h2>Compose an application at one root</h2>
+    </div>
+    <ol class="steps">
+      <li><div><b>List every provider once. Order does not matter.</b>
+<pre class="code"><code><span class="k">const</span> rt = <span class="k">await</span> runtime([
+  Config,                      <span class="c">// a defaulted service goes in as itself</span>
+  NetworkLive,
+  LocalStoreLive,
+  MediaStoreLive,
+  ServerFetchLive,
+  CoreValidationLive, MediaStageLive, SearchIndexLive, SearchStageLive,
+  PreStagesLive, PostStagesLive, CategorisersLive, HandlersLive,
+  MpsLive, SendLive, ReceiveLive,
+])</code></pre>
+      </div></li>
+      <li><div><b>Let the compiler close the list.</b><p>Remove <code>SearchIndexLive</code> and the next line fails with <code>Property 'run' does not exist on type '"e2: missing service SearchIndex"'</code>. The check folds in every provider's own needs, so a service nothing in your program mentions directly is still caught.</p></div></li>
+      <li><div><b>Decide the startup policy here, and nowhere else.</b>
+<pre class="code"><code>  lazy(CryptoLive),   <span class="c">// ratchet set up on the first seal or open</span>
+  lazy(MpsLive),      <span class="c">// built by the first read, send or receive - whichever comes first</span>
+  lazy(SendLive),     <span class="c">// nothing until the user sends</span>
+  ReceiveLive,        <span class="c">// a subscription can arrive at any moment</span></code></pre>
+      <p>A lazy provider's construction failure reaches its first user as a <code>ProviderFailed</code> defect instead of failing startup. Use it for services genuinely optional at boot.</p></div></li>
+      <li><div><b>Look at what actually happened.</b>
+<pre class="code"><code>rt.graph()
+<span class="c">// {</span>
+<span class="c">//   Mps:  { status: 'done',  lazy: true,  demanded: ['LocalStore', 'ServerFetch', 'Crypto', 'MPS/PreStages', …] },</span>
+<span class="c">//   Send: { status: 'empty', lazy: true,  demanded: [] },   // nobody has sent yet</span>
+<span class="c">//   …</span>
+<span class="c">// }</span></code></pre>
+      </div></li>
+      <li><div><b>Close it in reverse.</b><p><code>await rt.close()</code>, or <code>await using rt = await runtime(…)</code>. Every <code>acquire</code> releases most-recent first, and every <code>batch</code> flushes what is pending.</p></div></li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="test">
+    <div class="head">
+      <div class="eyebrow">Guide 3</div>
+      <h2>Test with doubles</h2>
+    </div>
+    <ol class="steps">
+      <li><div><b>A double is a provider for the same key.</b>
+<pre class="code"><code><span class="k">const</span> offline = Network.of({
+  send: () =&gt; fail(<span class="k">new</span> <span class="t">NetworkError</span>(<span class="s">'offline'</span>)),
+  inbound: () =&gt; async_(() =&gt; <span class="k">undefined</span>),
+  simulateIncoming: () =&gt; ok(<span class="k">undefined</span>),
+  sentCount: ok(<span class="n">0</span>),
+})
+
+<span class="k">const</span> result = <span class="k">await</span> run(program, [Config, offline, LocalStoreLive, CryptoLive, MpsLive, SendLive, <span class="c">/* … */</span>])</code></pre>
+      </div></li>
+      <li><div><b>Prefer <code>make</code> for a stateful double.</b><p><code>Store.of(new Map())</code> is one map shared by every runtime that lists it. <code>Store.make(function* () { const rows = new Map(); return { … } })</code> is a fresh map per build.</p></div></li>
+      <li><div><b>Assert on behaviour through the services.</b><p>The reference suite reads <code>LocalStore.count</code>, <code>LocalStore.writes</code> and <code>ServerFetch.fetchCount</code> to assert "a failed send leaves no phantom row" and "fifty envelopes are one write". Contracts that expose their counters are testable across a worker for free.</p></div></li>
+      <li><div><b>Use <code>runSync</code> when nothing suspends.</b><p>Synchronous providers and a synchronous program run in a plain function call. Reaching an asynchronous operation produces <code>Die(AsyncBoundary)</code>, never a hang.</p></div></li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="lazy">
+    <div class="head">
+      <div class="eyebrow">Guide 4</div>
+      <h2>Open a database lazily, once</h2>
+    </div>
+    <ol class="steps">
+      <li><div><b>Wrap the acquisition in <code>memo</code>, inside the provider that owns it.</b>
+<pre class="code"><code><span class="k">const</span> db = <span class="y">yield*</span> memo(
+  acquire(() =&gt; openMessages(<span class="s">'messages-'</span> + config.userId), (store) =&gt; store.close(), (reason) =&gt; <span class="k">new</span> <span class="t">IdbError</span>(reason))
+)
+<span class="c">// db: Fx&lt;IdbStore, IdbError&gt; — no dependencies, not opened yet</span></code></pre>
+      </div></li>
+      <li><div><b>Make every read and write yield the handle.</b>
+<pre class="code"><code>get: (id) =&gt; gen(<span class="k">function*</span> () {
+  <span class="k">const</span> store = <span class="y">yield*</span> db
+  <span class="k">return</span> <span class="y">yield*</span> fromPromise(() =&gt; store.get(id), (reason) =&gt; <span class="k">new</span> <span class="t">IdbError</span>(reason))
+}),</code></pre>
+      <p>The first read opens the store; concurrent first reads share the one open; later reads find it open. The provider itself constructs synchronously and cannot fail; the open's failure belongs to the read that triggered it, where the contract already says <code>IdbError</code>.</p></div></li>
+      <li><div><b>Want it warm? Say so at the memo, not at the root.</b><p><code>memo(acquire(…), { eager: true })</code> starts the open in the background at construction. Reads arriving before it settles wait; reads after do not. Nothing else changes.</p></div></li>
+      <li><div><b>Let teardown close it.</b><p>The <code>acquire</code> registered on the runtime scope when the memo was created, not on the request that happened to read first, so <code>rt.close()</code> closes it in reverse order with everything else.</p></div></li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="batch">
+    <div class="head">
+      <div class="eyebrow">Guide 5</div>
+      <h2>Coalesce writes without changing the API</h2>
+    </div>
+    <ol class="steps">
+      <li><div><b>Create a batcher where the writes happen.</b>
+<pre class="code"><code><span class="k">const</span> writer = <span class="y">yield*</span> batch(
+  (messages: <span class="k">readonly</span> <span class="t">Message</span>[]) =&gt; sync(() =&gt; { writes += <span class="n">1</span>; <span class="k">return</span> messages }),   <span class="c">// one transaction</span>
+  { maxSize: <span class="n">500</span> }
+)</code></pre>
+      </div></li>
+      <li><div><b>Make the row visible immediately, and enqueue the write.</b>
+<pre class="code"><code>put: (message) =&gt; gen(<span class="k">function*</span> () {
+  <span class="k">const</span> rows = <span class="y">yield*</span> db
+  rows.set(key(message), message)
+  <span class="y">yield*</span> writer.enqueue(message)
+  <span class="k">return</span> message
+}),</code></pre>
+      <p>Visible-before-durable is what lets a reaction find a message that arrived in the same batch. Keep the buffer in the store, where the readers are.</p></div></li>
+      <li><div><b>Expose <code>flush</code> and a counter, and let the scope flush at close.</b><p><code>flush: writer.flush</code> for callers that need durability now. The batcher's own finalizer flushes at shutdown. A test asserts <code>writes === 1</code> after fifty puts in one synchronous run.</p></div></li>
+      <li><div><b>Use <code>add</code> when the caller needs its result.</b><p><code>add(item)</code> waits for the batch and receives its own element of the result, by position, which is the DataLoader shape. It parks, so it needs an asynchronous entry point.</p></div></li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="worker">
+    <div class="head">
+      <div class="eyebrow">Guide 6</div>
+      <h2>Put a service in a worker</h2>
+    </div>
+    <ol class="steps">
+      <li><div><b>Make sure every member of the contract can cross.</b><p>An <code>Fx</code> value, a method of cloneable arguments returning an <code>Fx</code>, or a trailing-callback method returning <code>Fx&lt;never, E&gt;</code>. If a member cannot, the compiler names it. Either change its shape or leave that service in the worker.</p></div></li>
+      <li><div><b>In the worker, build the runtime and serve the keys.</b>
+<pre class="code"><code><span class="k">const</span> rt = <span class="k">await</span> runtime([<span class="c">/* … */</span>])
+serve(rt, [Mps, Send, Receive, SearchIndex, LocalStore], codec)</code></pre>
+      </div></li>
+      <li><div><b>On the main thread, link the worker and remote the keys.</b>
+<pre class="code"><code><span class="k">const</span> Worker = link(<span class="s">'MpsWorker'</span>, <span class="k">new</span> <span class="t">URL</span>(<span class="s">'../worker/main.ts'</span>, <span class="k">import</span>.meta.url), codec)
+<span class="k">await</span> runtime([MessageListLive, Worker, ...remote(Worker, [Mps, Send, Receive])])</code></pre>
+      </div></li>
+      <li><div><b>Write the consumer as if nothing crossed.</b>
+<pre class="code"><code><span class="k">export const</span> MessageListLive = MessageList.make(<span class="k">function*</span> () {
+  <span class="k">const</span> mps = <span class="y">yield*</span> Mps
+  <span class="k">const</span> send = <span class="y">yield*</span> Send
+  <span class="k">const</span> receive = <span class="y">yield*</span> Receive
+  <span class="k">return</span> {
+    compose: (threadId, body) =&gt; send.send(threadId, { kind: <span class="s">'text'</span>, body }),
+    live: (threadId) =&gt; receive.forThread(threadId, (message) =&gt; render([message])),
+    <span class="c">// …</span>
+  }
+})</code></pre>
+      </div></li>
+      <li><div><b>Keep the codec honest.</b><p>Every error class that can cross needs a case in <code>decodeError</code>. That file is the whole protocol now, so it is short enough to review.</p></div></li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="extend">
+    <div class="head">
+      <div class="eyebrow">Guide 7</div>
+      <h2>Extend the message pipeline without touching it</h2>
+    </div>
+    <div class="prose">
+      <p>MPS owns the <em>shape</em> of processing and nothing else. It depends on four extension points, services nobody gives a default to, and the composition root fills them.</p>
+    </div>
+    <figure class="svg">
+      <svg viewBox="0 0 960 200" role="img" aria-label="The MPS pipeline: an inbound payload is categorised into a directive, run through pre-stages, applied by a handler, its saved messages run through post-stages and persisted; follow-up directives loop back">
+        <defs><marker id="p1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <rect x="16" y="60" width="120" height="44" rx="6" class="node"/><text x="76" y="87" class="nodelbl">Inbound</text>
+        <line x1="136" y1="82" x2="166" y2="82" class="edge" marker-end="url(#p1)"/>
+        <rect x="168" y="60" width="140" height="44" rx="6" class="node acc"/><text x="238" y="80" class="nodelbl">Categorisers</text><text x="238" y="96" class="sub" text-anchor="middle">by payload kind</text>
+        <line x1="308" y1="82" x2="338" y2="82" class="edge" marker-end="url(#p1)"/>
+        <rect x="340" y="60" width="130" height="44" rx="6" class="node acc"/><text x="405" y="80" class="nodelbl">PreStages</text><text x="405" y="96" class="sub" text-anchor="middle">validation</text>
+        <line x1="470" y1="82" x2="500" y2="82" class="edge" marker-end="url(#p1)"/>
+        <rect x="502" y="60" width="130" height="44" rx="6" class="node acc"/><text x="567" y="80" class="nodelbl">Handlers</text><text x="567" y="96" class="sub" text-anchor="middle">by directive tag</text>
+        <line x1="632" y1="82" x2="662" y2="82" class="edge" marker-end="url(#p1)"/>
+        <rect x="664" y="60" width="130" height="44" rx="6" class="node acc"/><text x="729" y="80" class="nodelbl">PostStages</text><text x="729" y="96" class="sub" text-anchor="middle">media, search</text>
+        <line x1="794" y1="82" x2="824" y2="82" class="edge" marker-end="url(#p1)"/>
+        <rect x="826" y="60" width="120" height="44" rx="6" class="node pass"/><text x="886" y="87" class="nodelbl">local.put</text>
+        <path d="M 567 104 C 567 160, 300 160, 260 106" class="edge faint" marker-end="url(#p1)"/>
+        <text x="420" y="152" class="sub" text-anchor="middle">follow-up directives loop back (a delete emits a tombstone post)</text>
+        <text x="16" y="186" class="sub">the four blue boxes are services MPS depends on and does not define</text>
+      </svg>
+      <figcaption>Validation runs before application, so a rejected directive leaves nothing half-applied. Deletion is not a special case.</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div><b>Open the unions from your own file.</b>
+<pre class="code"><code><span class="k">declare module</span> <span class="s">'../domain.ts'</span> {
+  <span class="k">interface</span> <span class="t">PayloadMap</span>   { pin: { <span class="k">readonly</span> targetId: <span class="t">string</span> } }
+  <span class="k">interface</span> <span class="t">DirectiveMap</span> { PinMessage: { targetId: <span class="t">string</span>; threadId: <span class="t">string</span>; by: <span class="t">string</span> } }
+}</code></pre>
+      </div></li>
+      <li><div><b>Write the categoriser, the handler, and any stage the feature needs.</b><p>Plain functions and plain values. A stage that needs a service is a service of its own, so it can be swapped in a test and shipped by a team that owns neither MPS nor the root.</p></div></li>
+      <li><div><b>Watch the root stop compiling.</b><p><code>CategoriserTable</code> and <code>HandlerTable</code> are exhaustive over the open maps, so opening a union makes the registries incomplete. The gap cannot reach runtime.</p></div></li>
+      <li><div><b>Wire it in, in one file.</b>
+<pre class="code"><code><span class="k">export const</span> CategorisersLive = Categorisers.of({ ...coreCategorisers, pin: pinCategoriser })
+
+<span class="k">export const</span> HandlersLive = DirectiveHandlers.make(<span class="k">function*</span> () {
+  <span class="k">const</span> local = <span class="y">yield*</span> LocalStore
+  <span class="k">return</span> { ...coreHandlers(local), PinMessage: pinHandler(local) }
+})
+
+<span class="k">export const</span> PreStagesLive = PreStages.make(<span class="k">function*</span> () {
+  <span class="k">const</span> core = <span class="y">yield*</span> CoreValidation
+  <span class="k">return</span> [...core, pinPolicyStage]     <span class="c">// ordered after the built-in rules</span>
+})</code></pre>
+      <p>Adding the <code>pin</code> kind touched three files and none of them was <code>mps.ts</code>.</p></div></li>
+    </ol>
+  </section>
+
+  <nav class="pagenav">
+    <a href="workers.html"><span class="lbl">Previous</span>← Workers</a>
+    <a href="index.html"><span class="lbl">Back to</span>Overview →</a>
+  </nav>
+</main>
+</div>
+</body>
+</html>
