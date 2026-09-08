@@ -57,3 +57,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# local-only prototype (comparison app, not part of the published history)
+/prototype/
