@@ -12,14 +12,17 @@
     "lint": "eslint src packages examples",
     "check": "bun run typecheck && bun run lint && bun test",
     "build:browser": "bun build src/index.ts --target=browser --outdir dist",
-    "smoke:browser": "bun build src/tests/browser/entry.ts --target=browser --format=iife --outfile dist/e2-smoke.js && echo \"open dist/smoke.html in a browser\""
+    "smoke:browser": "bun build src/tests/browser/entry.ts --target=browser --format=iife --outfile dist/e2-smoke.js && echo \"open dist/smoke.html in a browser\"",
+    "site": "bun scripts/build-site.ts",
+    "site:serve": "bun scripts/build-site.ts --serve"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@typescript-eslint/parser": "^8.69.0",
     "@typescript-eslint/rule-tester": "^8.69.0",
     "@typescript-eslint/utils": "^8.69.0",
-    "eslint": "^10.10.0"
+    "eslint": "^10.10.0",
+    "monaco-editor": "0.57.0"
   },
   "peerDependencies": {
     "typescript": ">=5.5"

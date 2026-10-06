@@ -235,3 +235,63 @@ figcaption { font-size: 14px; color: var(--muted); padding: 10px 6px 4px; }
 .pagenav { display: flex; justify-content: space-between; gap: 16px; margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font-family: var(--display); font-weight: 500; }
 .pagenav a { text-decoration: none; }
 .pagenav .lbl { display: block; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+
+/* ---- playground -------------------------------------------------------------- */
+main.playground { max-width: none; padding-bottom: 40px; display: grid; gap: 18px; align-content: start; }
+main.playground header.page { padding-bottom: 18px; }
+main.playground header.page .lede { font-size: 17px; }
+nav.side ol.keys { gap: 6px; }
+nav.side ol.keys li { font-size: 13px; color: var(--muted); padding: 0 10px; }
+kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--surface); color: var(--ink); }
+.pg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pg-toolbar button, .pg-panel-head button, .pg-select select {
+  font: 500 14px/1 var(--display); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 8px 14px; cursor: pointer;
+}
+.pg-toolbar button:hover:not(:disabled), .pg-panel-head button:hover { border-color: var(--ink); }
+.pg-toolbar button:disabled { opacity: .45; cursor: default; }
+.pg-toolbar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pg-toolbar button.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); }
+@media (prefers-color-scheme: dark) { .pg-toolbar button.primary { color: #0D1014; } }
+.pg-toolbar :focus-visible, .pg-panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pg-select { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-right: 4px; }
+.pg-select select { text-transform: none; letter-spacing: 0; padding-right: 28px; }
+#pg-status { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin-left: auto; }
+#pg-status[data-state="running"] { color: var(--warn); }
+#pg-status[data-state="ok"] { color: var(--pass); }
+#pg-status[data-state="failed"] { color: var(--fail); }
+
+.pg-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; height: max(560px, calc(100vh - 250px)); }
+.pg-editor { border-radius: var(--radius); overflow: hidden; background: var(--code-bg); min-height: 0; }
+.pg-side { display: grid; grid-template-rows: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; min-height: 0; }
+.pg-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); border-radius: var(--radius); min-height: 0; overflow: hidden; }
+.pg-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; }
+.pg-panel-head button { font-size: 12px; padding: 4px 10px; }
+.pg-panel ol { list-style: none; margin: 0; padding: 8px 0; overflow: auto; font-family: var(--mono); font-size: 12.75px; line-height: 1.55; }
+
+.pg-console { background: var(--code-bg); color: var(--code-ink); }
+.pg-console .pg-panel-head { color: var(--code-gutter); border-bottom: 1px solid #2B323B; }
+.pg-console .pg-panel-head button { background: transparent; color: var(--code-ink); border-color: #3C4552; }
+.pg-console li { padding: 2px 14px; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid transparent; }
+.pg-console li.warn { color: #E0B15A; border-left-color: #E0B15A; background: rgba(224, 177, 90, .07); }
+.pg-console li.error { color: #F07E76; border-left-color: #F07E76; background: rgba(240, 126, 118, .08); }
+.pg-console li.debug, .pg-console li.system { color: var(--com); font-style: italic; }
+
+.pg-problems { background: var(--surface); border: 1px solid var(--line); }
+.pg-problems .pg-panel-head { color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.pg-problems .count { text-transform: none; letter-spacing: 0; }
+.pg-problems li button { display: grid; grid-template-columns: 4.5em 1fr; gap: 8px; width: 100%; text-align: left; border: 0; background: none; padding: 5px 14px; font: inherit; color: var(--ink); cursor: pointer; }
+.pg-problems li button:hover { background: var(--surface-2); }
+.pg-problems .where { color: var(--muted); }
+.pg-problems .err .where { color: var(--fail); }
+.pg-problems .warn .where { color: var(--warn); }
+.pg-problems .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 1180px) {
+  .pg-grid { grid-template-columns: 1fr; height: auto; }
+  .pg-editor { height: 62vh; min-height: 420px; }
+  .pg-side { grid-template-rows: auto auto; }
+  .pg-console ol { min-height: 220px; max-height: 50vh; }
+  .pg-problems ol { max-height: 40vh; }
+}
+.caption a { margin-left: auto; font-size: 12px; }

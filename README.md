@@ -6,6 +6,8 @@ e2 makes three things the compiler checks instead of things you keep in your hea
 
 It runs on Bun, in the browser and in workers, with no decorators, no build step and no runtime dependencies.
 
+**[Documentation](https://xnimorz.github.io/e2/)** · **[Playground](https://xnimorz.github.io/e2/playground.html)**
+
 ## Why
 
 In most TypeScript applications those three questions are answered by convention:
@@ -138,7 +140,7 @@ Because a service is looked up by name and its contract is a TypeScript interfac
 | `retry`, `repeat`, `Schedule` | policies, with `.jittered()`, `.maxDelay()`, `.upTo()` |
 | `scoped`, `acquire`, `addFinalizer`, `ensuring` | resources |
 
-The [documentation](documentation/index.html) covers each area in depth, with step-by-step guides.
+The [documentation](https://xnimorz.github.io/e2/) covers each area in depth, with step-by-step guides, and every example runs in the [playground](https://xnimorz.github.io/e2/playground.html).
 
 ## The `yield*` footgun
 
@@ -188,6 +190,9 @@ Early, and complete through the planned phases: types, `Result` and `Cause`, DI,
 bun install
 bun run check          # typecheck + lint + tests
 bun run smoke:browser  # build dist/e2-smoke.js, then open dist/smoke.html
+bun run site:serve     # build the documentation and playground into out/site, and serve them
 ```
+
+The site is published to GitHub Pages on every push to `master`.
 
 TypeScript 5.5 or later. The browser bundle is verified in CI by executing it with every Node global shadowed out of scope.

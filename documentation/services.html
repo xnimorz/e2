@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>e2 · Services &amp; DI</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232544C9%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22Helvetica,Arial,sans-serif%22 font-size=%2217%22 font-weight=%22700%22 fill=%22white%22 text-anchor=%22middle%22%3Ee2%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -21,6 +22,7 @@
     <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
     <li><a href="workers.html">Workers</a></li>
     <li><a href="guides.html">Guides</a></li>
+    <li><a href="playground.html">Playground</a></li>
   </ol>
   <div class="onpage">
     <div class="lbl">On this page</div>
@@ -36,7 +38,7 @@
       <li><a href="#limits">Honest limitations</a></li>
     </ol>
   </div>
-  <div class="side-foot">e2 · <a href="../README.md">README</a></div>
+  <div class="side-foot"><a href="https://github.com/xnimorz/e2">github.com/xnimorz/e2</a></div>
 </nav>
 
 <main>
@@ -68,7 +70,7 @@
 <span class="k">export type</span> <span class="t">Config</span> = <span class="t">ApiOf</span>&lt;<span class="k">typeof</span> Config&gt;
 <span class="c">// Defaulted&lt;'Config', { deviceId: string; userId: string; pageSize: number }, never, never&gt;</span></code></pre>
     <div class="prose">
-      <p>Prefer contract-first for anything with more than a couple of methods, so hovers read <code>Mps</code> rather than a structural type. <code>ApiOf&lt;typeof Db&gt;</code> and <code>NameOf&lt;typeof Db&gt;</code> recover the two halves of any key.</p>
+      <p>Prefer contract-first for anything with more than a couple of methods, so hovers read <code>Db</code> rather than a structural type. <code>ApiOf&lt;typeof Db&gt;</code> and <code>NameOf&lt;typeof Db&gt;</code> recover the two halves of any key.</p>
     </div>
   </section>
 
@@ -121,7 +123,7 @@
       <h2>One flat, unordered list, built on demand</h2>
     </div>
     <div class="prose">
-      <p>There is no <code>provide</code>, <code>provideMerge</code>, <code>merge</code> or <code>mergeAll</code>, and there is no dependency list on a provider. A list is a set of providers, each named once. Building it means demanding each one in list order; a body that yields another service demands <em>it</em>, recursively, so construction order is dependency order without a sort, and a service is built exactly once however many bodies reach for it.</p>
+      <p>There is no composition operator and no dependency list on a provider. A list is a set of providers, each named once. Building it means demanding each one in list order; a body that yields another service demands <em>it</em>, recursively, so construction order is dependency order without a sort, and a service is built exactly once however many bodies reach for it.</p>
     </div>
     <figure class="svg">
       <svg viewBox="0 0 960 250" role="img" aria-label="A flat list of providers; demanding Db builds Config and Logger on the way; the graph is discovered by running">
@@ -147,7 +149,7 @@
       <figcaption>Cycles and missing providers still surface at startup, because startup demands every provider. Both are defects that name the services involved.</figcaption>
     </figure>
     <div class="prose">
-      <p>A list that does not close over its own needs is a compile error at the list. <code>runtime</code>'s return type collapses to a literal naming the gap, so the next line reads:</p>
+      <p>A list that does not close over its own needs is a compile error at the list (<a href="playground.html#services">try it</a>). <code>runtime</code>'s return type collapses to a literal naming the gap, so the next line reads:</p>
     </div>
     <div class="diagnostic">
       <header><span class="code">TS2339</span><span>an open list</span></header>
@@ -212,7 +214,7 @@ rt.graph()                 <span class="c">// { Mps: { status: 'empty', lazy: tr
     </div>
     <div class="prose">
       <p>A module that wants to be extended defines the key and depends on it, and defines no provider. Whoever composes the application supplies one. There is no separate concept for this: it is <code>service&lt;Api&gt;()</code> like everything else, and the provider is one more entry in the list.</p>
-      <p>The reference application uses this for its message pipeline. <code>Mps</code> depends on <code>PreStages</code>, <code>PostStages</code>, <code>Categorisers</code> and <code>DirectiveHandlers</code> and defines none of them. A feature adds a message kind by merging into the domain's open interfaces, and because the registries are exhaustive over those interfaces, forgetting to wire the feature in at the root is a compile error. See the <a href="guides.html#extend">guide</a>.</p>
+      <p>A message pipeline is a good example. It depends on <code>PreStages</code>, <code>PostStages</code>, <code>Categorisers</code> and <code>DirectiveHandlers</code> and defines none of them. A feature adds a message kind by merging into the domain's open interfaces, and because the registries are exhaustive over those interfaces, forgetting to wire the feature in at the root is a compile error. The <a href="guides.html#extend">guide</a> walks through it.</p>
     </div>
   </section>
 

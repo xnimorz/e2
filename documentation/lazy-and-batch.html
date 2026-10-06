@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>e2 · Lazy init &amp; batching</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232544C9%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22Helvetica,Arial,sans-serif%22 font-size=%2217%22 font-weight=%22700%22 fill=%22white%22 text-anchor=%22middle%22%3Ee2%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -21,6 +22,7 @@
     <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
     <li><a href="workers.html">Workers</a></li>
     <li><a href="guides.html">Guides</a></li>
+    <li><a href="playground.html">Playground</a></li>
   </ol>
   <div class="onpage">
     <div class="lbl">On this page</div>
@@ -32,14 +34,14 @@
       <li><a href="#where">Where coalescing lives</a></li>
     </ol>
   </div>
-  <div class="side-foot">e2 · <a href="../README.md">README</a></div>
+  <div class="side-foot"><a href="https://github.com/xnimorz/e2">github.com/xnimorz/e2</a></div>
 </nav>
 
 <main>
   <header class="page">
     <div class="eyebrow">e2 · lazy initialisation and batching</div>
     <h1>Open it once, on first use. Write it once, for everyone who asked.</h1>
-    <p class="lede">Two primitives, <code>memo</code> and <code>batch</code>, and one mechanism underneath them, shared with the runtime's own construction of services. This page explains the mechanism once and then each primitive in the shape it appears in the reference application.</p>
+    <p class="lede">Two primitives, <code>memo</code> and <code>batch</code>, and one mechanism underneath them, shared with the runtime's own construction of services. This page explains the mechanism once, then each primitive on a realistic case: a messaging client whose local store is backed by IndexedDB.</p>
   </header>
 
   <!-- ============================================================ -->
@@ -47,6 +49,7 @@
     <div class="head">
       <div class="eyebrow">The mechanism</div>
       <h2>A cell runs an effect at most once and shares the outcome</h2>
+      <p class="honest">Both primitives, with timings you can watch, are in the <a href="playground.html#lazy">playground</a>.</p>
     </div>
     <figure class="svg">
       <svg viewBox="0 0 960 232" role="img" aria-label="State machine of a cell: empty to inflight on first demand, inflight to done on success, inflight back to empty on failure, self-loops for join and value">
@@ -154,7 +157,7 @@
     </div>
     <div class="prose">
       <p>A service key is itself an <code>Fx</code>, so <code>memo</code> applies to it with no API of its own. Yielding <code>memo(Mps)</code> at construction records <code>'Mps'</code> in the provider's <code>Needs</code>, so the list is still checked as a whole, and returns a handle. Yielding the handle later resolves <code>Mps</code> <em>then</em>: builds it if the cell is empty, joins if it is in flight, returns it if it is done. The contract is untouched.</p>
-      <p>In the reference application <code>Send</code> seals, transmits, then persists. MPS is needed only for the last step, and at the moment a send happens it may be unbuilt, or halfway through construction because <code>Receive</code> is building it.</p>
+      <p>Take a messaging client's <code>Send</code>: it seals a message, transmits it, then hands it to <code>Mps</code>, the message-processing service, to persist. <code>Mps</code> is needed only for that last step, and at the moment a send happens it may be unbuilt, or halfway through construction because <code>Receive</code> is building it.</p>
     </div>
 <pre class="code"><code><span class="k">export const</span> SendLive = Send.make(<span class="k">function*</span> () {
   <span class="k">const</span> config  = <span class="y">yield*</span> Config
@@ -212,7 +215,7 @@
         <rect x="660" y="120" width="140" height="26" rx="3" class="bar acc"/><text x="730" y="137" class="lbl" text-anchor="middle">1 write, 1 row</text>
         <text x="100" y="182" class="sub">window = 0: the next turn of the event loop, after the burst · maxSize closes a batch early · flush closes one now</text>
       </svg>
-      <figcaption>Measured in the reference application: fifty envelopes delivered in one batch commit as one write of fifty rows.</figcaption>
+      <figcaption>Fifty puts in one synchronous run commit as one write of fifty rows.</figcaption>
     </figure>
     <div class="prose">
       <p>The store that motivated it uses <code>enqueue</code>: <code>put</code> makes the row visible at once and hands it to the batch, so a hundred puts in a synchronous run are one transaction.</p>
@@ -243,7 +246,7 @@ writes: sync(() =&gt; writes),</code></pre>
       <h2>Where coalescing lives is decided by who reads</h2>
     </div>
     <div class="prose">
-      <p>In the reference application the write buffer lives in <code>LocalStore</code>, not in MPS, although MPS is the persistence orchestrator. The reason is the read path. Validation stages and handlers read the store directly, and a reaction that arrives in the same batch as its target has to find that target. A buffer held by MPS would hide the target until flushed, and the reaction would be rejected. Pending rows must be readable before they are durable, and only the store can arrange that.</p>
+      <p>In the messaging client the write buffer lives in <code>LocalStore</code>, not in <code>Mps</code>, although <code>Mps</code> orchestrates persistence. The reason is the read path. Validation stages and handlers read the store directly, and a reaction that arrives in the same batch as its target has to find that target. A buffer held by MPS would hide the target until flushed, and the reaction would be rejected. Pending rows must be readable before they are durable, and only the store can arrange that.</p>
       <p>The corollary is that a batch is processed in order, one envelope at a time. Order is what makes an in-batch reference safe, and the write coalescing does not need concurrency to pay off.</p>
     </div>
   </section>

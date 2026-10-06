@@ -1,5 +1,5 @@
 /**
- * e2 - a re-think of Effect, scoped to dependency injection and control flow.
+ * e2 - typed dependency injection and structured control flow for TypeScript.
  */
 
 // Explicit resource management is still landing across runtimes (Bun 1.3.12,

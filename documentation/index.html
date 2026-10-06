@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>e2 documentation</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232544C9%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22Helvetica,Arial,sans-serif%22 font-size=%2217%22 font-weight=%22700%22 fill=%22white%22 text-anchor=%22middle%22%3Ee2%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -21,10 +22,12 @@
     <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
     <li><a href="workers.html">Workers</a></li>
     <li><a href="guides.html">Guides</a></li>
+    <li><a href="playground.html">Playground</a></li>
   </ol>
   <div class="onpage">
     <div class="lbl">On this page</div>
     <ol>
+      <li><a href="#why">Why</a></li>
       <li><a href="#ideas">Three ideas</a></li>
       <li><a href="#start">Quick start</a></li>
       <li><a href="#surface">The whole surface</a></li>
@@ -32,22 +35,43 @@
       <li><a href="#develop">Development</a></li>
     </ol>
   </div>
-  <div class="side-foot">e2 · <a href="../README.md">README</a><br>prototype · <a href="../prototype/COMPARISON.md">comparison with Effect</a></div>
+  <div class="side-foot"><a href="https://github.com/xnimorz/e2">github.com/xnimorz/e2</a></div>
 </nav>
 
 <main>
   <header class="page">
     <div class="eyebrow">e2 · overview</div>
-    <h1>Dependency injection and control flow for TypeScript, with nothing else attached</h1>
-    <p class="lede">e2 is a re-think of <a href="https://effect.website">Effect</a> scoped to the two things a program cannot do without: knowing what it depends on, and saying what happens next. No Schema, no Stream, no platform package. It runs on Bun and in the browser with no decorators, no build step and no runtime dependencies. The whole worker of the reference application, application code included, is 57&nbsp;KB.</p>
+    <h1>Typed dependency injection and structured control flow for TypeScript</h1>
+    <p class="lede">e2 makes three things the compiler checks instead of things you keep in your head: what a piece of code depends on, how it can fail, and what happens to the work it started when it stops. You write ordinary sequential code in generator functions; e2 infers the rest into one type, <code>Fx&lt;Value, Error, Dependency&gt;</code>, and runs it on Bun, in the browser and in workers, with no decorators, no build step and no runtime dependencies.</p>
     <div class="chips">
       <span class="chip"><span class="k">type</span> Fx&lt;Value, Error, Dependency&gt;</span>
       <span class="chip"><span class="k">deps</span> inferred from <span class="y" style="font-size:12px">yield*</span></span>
       <span class="chip"><span class="k">wiring</span> one flat list</span>
       <span class="chip"><span class="k">lazy</span> memo · lazy · batch</span>
-      <span class="chip"><span class="k">workers</span> serve a service by key</span>
+      <span class="chip"><span class="k">try it</span> <a href="playground.html">playground</a></span>
     </div>
   </header>
+
+  <!-- ============================================================ -->
+  <section id="why">
+    <div class="head">
+      <div class="eyebrow">Why</div>
+      <h2>Three questions every program answers, usually by convention</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Question</th><th>Usually answered by</th><th>In e2</th></tr></thead>
+        <tbody>
+          <tr><td>What does this code depend on?</td><td>Imports, which hard-wire one implementation and push tests towards module mocks; or a DI container that wires at runtime from decorators and reflection, and reports a missing binding when the app starts, or when a request first reaches the code that needed it.</td><td>The type. <code>yield* Db</code> puts <code>'Db'</code> in it, the requirement travels to every caller, and running without a <code>Db</code> does not compile.</td></tr>
+          <tr><td>How can it fail?</td><td><code>throw</code>. Nothing in a signature says what can go wrong, and every <code>catch</code> receives <code>unknown</code>.</td><td>The type. Expected failures are a union in the second slot; bugs and cancellation are kept apart from them.</td></tr>
+          <tr><td>When does it stop?</td><td>An <code>AbortSignal</code> threaded through by hand, <code>finally</code> blocks you hope run, and promises that keep going after whatever started them has given up.</td><td>Structure. Forked work dies with its parent, cancellation reaches <code>fetch</code>, and every resource is released in reverse, with the outcome that closed it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>Nobody writes the resulting signature by hand. A missing service is a compile error that names it, and that wording is a feature: <code>src/tests/diagnostics.spec.ts</code> runs <code>tsc</code> and pins it, so a TypeScript upgrade that degrades a message fails CI.</p>
+    </div>
+  </section>
 
   <!-- ============================================================ -->
   <section id="ideas">
@@ -110,7 +134,7 @@
       <h2>A service, an implementation, a program, a run</h2>
     </div>
     <div class="prose">
-      <p>The repository is the package: <code>bun install</code> at the root, and import from <code>e2</code>, which resolves to <code>src/index.ts</code>. TypeScript 5.5 or later.</p>
+      <p>The repository is the package: <code>bun install</code> at the root, and import from <code>e2</code>, which resolves to <code>src/index.ts</code>. TypeScript 5.5 or later. Or skip the install: every step below runs in the <a href="playground.html#services">playground</a>, with the compiler's diagnostics live.</p>
     </div>
     <div class="figure">
       <div class="caption"><span class="lbl">1</span><code>a contract and its key share a name</code></div>
@@ -170,7 +194,7 @@
           <tr><td>Fibers</td><td><code>fork</code> <code>join</code> <code>joinExit</code> <code>interruptFiber</code> <code>race</code> <code>allConcurrent</code> <code>timeout</code> <code>forEach</code></td><td><a href="concurrency.html">Concurrency</a></td></tr>
           <tr><td>Resources</td><td><code>scoped</code> <code>acquire</code> <code>addFinalizer</code> <code>ensuring</code></td><td><a href="concurrency.html#resources">Concurrency</a></td></tr>
           <tr><td>Policies</td><td><code>retry</code> <code>repeat</code> <code>Schedule</code> (<code>recurs</code> <code>spaced</code> <code>exponential</code> <code>stop</code>, <code>.upTo</code> <code>.maxDelay</code> <code>.jittered</code> <code>.whileError</code>)</td><td><a href="concurrency.html#schedules">Concurrency</a></td></tr>
-          <tr><td>Workers</td><td><code>serve</code> <code>link</code> <code>remote</code> (in the reference application's bridge, not the core)</td><td><a href="workers.html">Workers</a></td></tr>
+          <tr><td>Workers</td><td>no API of its own: a service key means the same thing on both sides of a worker</td><td><a href="workers.html">Workers</a></td></tr>
           <tr><td>Lint</td><td><code>eslint-plugin-e2</code>, rule <code>no-floating-fx</code></td><td><a href="effects.html#footgun">Effects</a></td></tr>
         </tbody>
       </table>
@@ -184,12 +208,13 @@
       <h2>Read in order, or jump to what you need</h2>
     </div>
     <div class="cards">
-      <a class="card" href="effects.html"><h3>Effects</h3><p>The <code>Fx</code> type, the four ways to build one, <code>Result</code> as its pure subset, the three failure channels, and the one footgun.</p><span class="go">effects.html →</span></a>
+      <a class="card" href="effects.html"><h3>Effects</h3><p>The <code>Fx</code> type, the ways to build one, <code>Result</code> as its pure subset, the three failure channels, and the one footgun.</p><span class="go">effects.html →</span></a>
       <a class="card" href="services.html"><h3>Services &amp; DI</h3><p>Contracts and keys, implementations that yield what they need, the flat list, demand-driven construction, and the diagnostics.</p><span class="go">services.html →</span></a>
       <a class="card" href="lazy-and-batch.html"><h3>Lazy init &amp; batching</h3><p><code>memo</code> for "open once, on first use", <code>batch</code> for "a hundred puts, one write", and why they are the same cell.</p><span class="go">lazy-and-batch.html →</span></a>
       <a class="card" href="concurrency.html"><h3>Concurrency &amp; resources</h3><p>Fibers that die with their parent, interruption by <code>AbortSignal</code>, scopes that close in reverse, and schedules.</p><span class="go">concurrency.html →</span></a>
-      <a class="card" href="workers.html"><h3>Workers</h3><p>A service key is the same key on either side of a worker. <code>serve</code> it there, <code>remote</code> it here, and nothing in between.</p><span class="go">workers.html →</span></a>
+      <a class="card" href="workers.html"><h3>Workers</h3><p>A service key is the same key on either side of a worker. Moving work off the main thread is a change to the provider list.</p><span class="go">workers.html →</span></a>
       <a class="card" href="guides.html"><h3>Guides</h3><p>Step by step: define a service, compose an app, test with doubles, open a database lazily, coalesce writes, cross a worker.</p><span class="go">guides.html →</span></a>
+      <a class="card" href="playground.html"><h3>Playground</h3><p>Edit and run e2 in the browser, with the same TypeScript the diagnostics are pinned against. Every example on these pages is there.</p><span class="go">playground.html →</span></a>
     </div>
   </section>
 
@@ -200,10 +225,11 @@
       <h2>Checks</h2>
     </div>
     <pre class="code"><code>bun install
-bun run check          <span class="c"># typecheck + lint + tests, including both prototype suites</span>
-bun run smoke:browser  <span class="c"># build dist/e2-smoke.js, then open dist/smoke.html</span></code></pre>
+bun run check          <span class="c"># typecheck + lint + tests</span>
+bun run smoke:browser  <span class="c"># build dist/e2-smoke.js, then open dist/smoke.html</span>
+bun run site           <span class="c"># build this documentation and the playground into out/site</span></code></pre>
     <div class="prose">
-      <p>The compile-time diagnostics are tested as a feature: <code>src/tests/diagnostics.spec.ts</code> shells out to <code>tsc</code> and pins the exact wording, so a TypeScript upgrade that degrades a message turns CI red. The type-level proofs behind the design live in <code>spike/</code>.</p>
+      <p>The type-level proofs behind the design live in <code>spike/</code>.</p>
     </div>
   </section>
 

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2 playground</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232544C9%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22Helvetica,Arial,sans-serif%22 font-size=%2217%22 font-weight=%22700%22 fill=%22white%22 text-anchor=%22middle%22%3Ee2%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="stylesheet" href="playground/main.css">
+</head>
+<body>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <a class="brand" href="index.html"><span class="mark">e2</span><span class="tag">documentation</span></a>
+  <ol>
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="effects.html">Effects</a></li>
+    <li><a href="services.html">Services &amp; DI</a></li>
+    <li><a href="lazy-and-batch.html">Lazy init &amp; batching</a></li>
+    <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
+    <li><a href="workers.html">Workers</a></li>
+    <li><a href="guides.html">Guides</a></li>
+    <li><a href="playground.html" aria-current="page">Playground</a></li>
+  </ol>
+  <div class="onpage">
+    <div class="lbl">Keys</div>
+    <ol class="keys">
+      <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>Enter</kbd> run</li>
+      <li><kbd>F12</kbd> go to definition</li>
+      <li><kbd>F1</kbd> command palette</li>
+    </ol>
+  </div>
+  <div class="side-foot"><a href="https://github.com/xnimorz/e2">github.com/xnimorz/e2</a></div>
+</nav>
+
+<main class="playground">
+  <header class="page">
+    <div class="eyebrow">e2 · playground</div>
+    <h1>Playground</h1>
+    <p class="lede">Edit and run e2 in the browser. The editor's TypeScript is the version the library's diagnostics are pinned against, with e2's own sources loaded, so hovers show the inferred <code>Fx</code> types and a missing service is the same compile error you would see locally.</p>
+  </header>
+
+  <div class="pg-toolbar">
+    <label class="pg-select"><span>Example</span><select id="pg-examples" aria-label="Example"></select></label>
+    <button type="button" id="pg-run" class="primary" title="Run (Ctrl/⌘ + Enter)">Run</button>
+    <button type="button" id="pg-reset" title="Restore the example">Reset</button>
+    <button type="button" id="pg-share" title="Put the code in the link">Share</button>
+    <span id="pg-status" role="status" data-state="idle"></span>
+  </div>
+
+  <div class="pg-grid">
+    <div class="pg-editor" id="pg-editor" aria-label="Code editor"></div>
+    <div class="pg-side">
+      <div class="pg-panel pg-console">
+        <div class="pg-panel-head"><span>Output</span><button type="button" id="pg-clear">Clear</button></div>
+        <ol id="pg-output" aria-live="polite"></ol>
+      </div>
+      <div class="pg-panel pg-problems">
+        <div class="pg-panel-head"><span>Problems</span><span id="pg-problem-count" class="count"></span></div>
+        <ol id="pg-problems"></ol>
+      </div>
+    </div>
+  </div>
+  <noscript><p class="honest">The playground needs JavaScript.</p></noscript>
+</main>
+</div>
+<script type="module" src="playground/main.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>e2 · Workers</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232544C9%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22Helvetica,Arial,sans-serif%22 font-size=%2217%22 font-weight=%22700%22 fill=%22white%22 text-anchor=%22middle%22%3Ee2%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -21,176 +22,194 @@
     <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
     <li><a href="workers.html" aria-current="page">Workers</a></li>
     <li><a href="guides.html">Guides</a></li>
+    <li><a href="playground.html">Playground</a></li>
   </ol>
   <div class="onpage">
     <div class="lbl">On this page</div>
     <ol>
       <li><a href="#idea">The idea</a></li>
-      <li><a href="#api">serve, link, remote</a></li>
-      <li><a href="#rule">What can cross</a></li>
-      <li><a href="#streams">Streams</a></li>
-      <li><a href="#codec">The codec</a></li>
-      <li><a href="#under">Under the hood</a></li>
+      <li><a href="#contract">The contract</a></li>
+      <li><a href="#providers">The providers</a></li>
+      <li><a href="#wire">What crosses</a></li>
+      <li><a href="#cancel">Cancellation and lifetime</a></li>
+      <li><a href="#design">Contracts that can cross</a></li>
     </ol>
   </div>
-  <div class="side-foot">e2 · <a href="../README.md">README</a><br>source · <a href="../prototype/e2/src/bridge/">prototype/e2/src/bridge</a></div>
+  <div class="side-foot"><a href="https://github.com/xnimorz/e2">github.com/xnimorz/e2</a></div>
 </nav>
 
 <main>
   <header class="page">
     <div class="eyebrow">e2 · workers</div>
     <h1>A service key is the same key on either side of a worker</h1>
-    <p class="lede">Because a service is looked up by name and its contract is TypeScript, a service can be served across a worker boundary by key. The worker <code>serve</code>s it; the main thread gets a provider for the same key from <code>remote</code>; a consumer does <code>yield* Mps</code> and cannot tell which side it is on. The bridge that does this lives in the reference application, not the core, since it is platform code.</p>
+    <p class="lede">A program that does <code>yield* Heavy</code> knows the contract and nothing else, so it cannot tell whether the implementation runs inline or on another thread. Moving work off the main thread is a change to the provider list. e2 has no worker API for this: the pattern is a provider that forwards calls, and <a href="https://github.com/xnimorz/e2/tree/master/examples/worker"><code>examples/worker</code></a> is a complete one.</p>
   </header>
 
   <!-- ============================================================ -->
   <section id="idea">
     <div class="head">
       <div class="eyebrow">The idea</div>
-      <h2>The contract is the protocol</h2>
+      <h2>One contract, three implementations, one program</h2>
     </div>
     <figure class="svg">
-      <svg viewBox="0 0 960 250" role="img" aria-label="Main thread: MessageList yields Mps, a proxy provider; the call crosses the worker boundary by service name and member; the worker resolves the real Mps from its runtime">
+      <svg viewBox="0 0 960 250" role="img" aria-label="The program yields Heavy. The provider list decides whether Heavy is implemented on a worker, inline on the main thread, or as a stub.">
         <defs><marker id="w1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead acc"/></marker><marker id="w2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
-        <rect x="24" y="24" width="420" height="200" rx="8" class="node" style="fill:none;stroke-dasharray:4 4"/>
+        <rect x="24" y="24" width="556" height="200" rx="8" class="node" style="fill:none;stroke-dasharray:4 4"/>
         <text x="40" y="48" class="big">main thread</text>
-        <rect x="40" y="68" width="170" height="48" rx="6" class="node"/><text x="125" y="97" class="nodelbl">MessageList</text>
-        <rect x="260" y="68" width="170" height="48" rx="6" class="node acc"/><text x="345" y="90" class="nodelbl">Mps</text><text x="345" y="106" class="sub" text-anchor="middle">remote(Worker, [Mps])</text>
-        <line x1="210" y1="92" x2="258" y2="92" class="edge acc" marker-end="url(#w1)"/>
-        <text x="234" y="84" class="edgelbl acc" text-anchor="middle">yield*</text>
-        <rect x="40" y="150" width="390" height="48" rx="6" class="node"/><text x="235" y="172" class="nodelbl">Worker = link('MpsWorker', url, codec)</text><text x="235" y="188" class="sub" text-anchor="middle">one worker, shared by every remote key</text>
-        <line x1="345" y1="116" x2="345" y2="148" class="edge faint"/>
-        <rect x="516" y="24" width="420" height="200" rx="8" class="node" style="fill:none;stroke-dasharray:4 4"/>
-        <text x="532" y="48" class="big">worker</text>
-        <rect x="532" y="68" width="170" height="48" rx="6" class="node pass"/><text x="617" y="90" class="nodelbl">Mps</text><text x="617" y="106" class="sub" text-anchor="middle">lazy(MpsLive), real</text>
-        <rect x="726" y="68" width="194" height="48" rx="6" class="node"/><text x="823" y="90" class="nodelbl">LocalStore, Crypto, …</text><text x="823" y="106" class="sub" text-anchor="middle">its dependencies</text>
-        <line x1="702" y1="92" x2="724" y2="92" class="edge" marker-end="url(#w2)"/>
-        <rect x="532" y="150" width="388" height="48" rx="6" class="node"/><text x="726" y="172" class="nodelbl">serve(rt, [Mps, Send, Receive, …], codec)</text><text x="726" y="188" class="sub" text-anchor="middle">by key; resolved from the runtime on the first call</text>
-        <path d="M 430 174 L 530 174" class="edge acc" marker-end="url(#w1)"/>
-        <text x="480" y="166" class="edgelbl acc" text-anchor="middle">{ service: 'Mps', member: 'ingest', args }</text>
-        <text x="480" y="240" class="sub" text-anchor="middle">the same key, the same contract, on both sides</text>
+        <rect x="40" y="100" width="170" height="56" rx="6" class="node"/><text x="125" y="125" class="nodelbl">fingerprint</text><text x="125" y="143" class="sub" text-anchor="middle">yield* Heavy</text>
+        <rect x="320" y="60" width="240" height="40" rx="6" class="node acc"/><text x="440" y="85" class="nodelbl">HeavyOnWorker</text>
+        <rect x="320" y="110" width="240" height="40" rx="6" class="node"/><text x="440" y="135" class="nodelbl">HeavyOnMainThread</text>
+        <rect x="320" y="160" width="240" height="40" rx="6" class="node"/><text x="440" y="185" class="nodelbl">HeavyStub</text>
+        <line x1="210" y1="128" x2="318" y2="80" class="edge acc" marker-end="url(#w1)"/>
+        <line x1="210" y1="128" x2="318" y2="130" class="edge faint"/>
+        <line x1="210" y1="128" x2="318" y2="180" class="edge faint"/>
+        <text x="264" y="208" class="edgelbl acc" text-anchor="middle">the list picks one</text>
+        <rect x="712" y="24" width="224" height="200" rx="8" class="node" style="fill:none;stroke-dasharray:4 4"/>
+        <text x="728" y="48" class="big">worker</text>
+        <rect x="728" y="60" width="192" height="40" rx="6" class="node pass"/><text x="824" y="85" class="nodelbl">heavy.worker.ts</text>
+        <text x="728" y="124" class="sub">plain handlers,</text>
+        <text x="728" y="140" class="sub">time-sliced, one</text>
+        <text x="728" y="156" class="sub">AbortController per call</text>
+        <line x1="560" y1="74" x2="726" y2="74" class="edge acc" marker-end="url(#w1)"/>
+        <text x="646" y="66" class="edgelbl acc" text-anchor="middle">call · cancel</text>
+        <line x1="726" y1="90" x2="562" y2="90" class="edge" marker-end="url(#w2)"/>
+        <text x="646" y="106" class="edgelbl" text-anchor="middle">ok · err · defect</text>
+        <text x="480" y="244" class="sub" text-anchor="middle">the program is identical in all three cases; only the list changes</text>
       </svg>
-      <figcaption>Nothing is written per method. The method list, the client contract and its proxy, and the handler table all disappear; what remains of the protocol is the error codec.</figcaption>
+      <figcaption>The contract is shared by both sides. One side has the real implementation; the other has a provider that forwards named methods.</figcaption>
     </figure>
   </section>
 
   <!-- ============================================================ -->
-  <section id="api">
+  <section id="contract">
     <div class="head">
-      <div class="eyebrow">The API</div>
-      <h2>Three functions</h2>
+      <div class="eyebrow">The contract</div>
+      <h2>An interface and a key, as always</h2>
     </div>
-    <div class="compare">
-      <div class="figure">
-        <div class="caption"><span class="lbl">worker</span><code>worker/main.ts</code></div>
-<pre class="code"><code><span class="k">const</span> rt = <span class="k">await</span> runtime([
-  Config, NetworkLive, LocalStoreLive, MediaStoreLive, ServerFetchLive,
-  CoreValidationLive, MediaStageLive, SearchIndexLive, SearchStageLive,
-  PreStagesLive, PostStagesLive, CategorisersLive, HandlersLive,
-  lazy(CryptoLive), lazy(MpsLive), lazy(SendLive), ReceiveLive,
-])
+<pre class="code"><code><span class="k">export interface</span> <span class="t">HeavySvc</span> {
+  <span class="k">readonly</span> digest: (input: <span class="t">string</span>, rounds: <span class="t">number</span>) =&gt; <span class="t">Fx</span>&lt;<span class="t">string</span>, <span class="t">HeavyError</span>&gt;
+  <span class="k">readonly</span> countPrimes: (limit: <span class="t">number</span>) =&gt; <span class="t">Fx</span>&lt;<span class="t">number</span>, <span class="t">HeavyError</span>&gt;
+}
+<span class="k">export const</span> Heavy = service&lt;<span class="t">HeavySvc</span>&gt;()(<span class="s">'Heavy'</span>)
 
-serve(rt, [Mps, Send, Receive, SearchIndex, LocalStore, ServerFetch, Network, MediaStore], codec)</code></pre>
-      </div>
-      <div class="figure">
-        <div class="caption"><span class="lbl">main thread</span><code>the composition root</code></div>
-<pre class="code"><code><span class="k">const</span> Worker = link(<span class="s">'MpsWorker'</span>, <span class="k">new</span> <span class="t">URL</span>(<span class="s">'../worker/main.ts'</span>, <span class="k">import</span>.meta.url), codec)
-
-<span class="k">const</span> rt = <span class="k">await</span> runtime([
-  MessageListLive,
-  Worker,
-  ...remote(Worker, [Mps, Send, Receive, SearchIndex]),
-])
-
-<span class="c">// MessageListLive does `yield* Mps`, `yield* Send`, `yield* Receive`</span>
-<span class="c">// and would be unchanged if they ran in-process.</span></code></pre>
-      </div>
-    </div>
-    <dl class="kv">
-      <dt>serve(rt, keys, codec)</dt><dd>exposes the listed services over the worker's message port. Builds nothing; each service is demanded from <code>rt</code> on its first remote call, so a <code>lazy()</code> one stays lazy. Compile-time checks: every key is servable, and every key is provided by <code>rt</code>.</dd>
-      <dt>link(name, url, codec)</dt><dd>a worker as a service with a default: opened when first needed, terminated when the runtime closes. Every remote key for this worker shares it.</dd>
-      <dt>remote(Worker, keys)</dt><dd>a provider per key, each depending only on the link. The same servable check as <code>serve</code>.</dd>
-    </dl>
+<span class="c">// The program never mentions workers, messages or threads.</span>
+<span class="k">const</span> fingerprint = fx(<span class="k">function*</span> (input: <span class="t">string</span>, rounds: <span class="t">number</span>) {
+  <span class="k">const</span> heavy = <span class="y">yield*</span> Heavy
+  <span class="k">const</span> digest = <span class="y">yield*</span> heavy.digest(input, rounds)
+  <span class="k">return</span> <span class="s">`${input.length}:${digest}`</span>
+})</code></pre>
   </section>
 
   <!-- ============================================================ -->
-  <section id="rule">
+  <section id="providers">
     <div class="head">
-      <div class="eyebrow">What can cross</div>
-      <h2>A member is servable if it is one of three shapes</h2>
+      <div class="eyebrow">The providers</div>
+      <h2>Choosing a thread is one entry in the list</h2>
+    </div>
+    <div class="compare">
+      <div class="figure">
+        <div class="caption"><span class="lbl">on a worker</span><code>providers.ts</code></div>
+<pre class="code"><code><span class="k">export const</span> HeavyOnWorker = Heavy.make(<span class="k">function*</span> () {
+  <span class="k">const</span> link = <span class="y">yield*</span> openLink(<span class="k">new</span> <span class="t">URL</span>(<span class="s">'./heavy.worker.ts'</span>, <span class="k">import</span>.meta.url))
+  <span class="k">return</span> {
+    digest: (input, rounds) =&gt;
+      call(link, <span class="s">'digest'</span>, [input, rounds], decodeHeavyError),
+    countPrimes: (limit) =&gt;
+      call(link, <span class="s">'countPrimes'</span>, [limit], decodeHeavyError),
+  }
+})</code></pre>
+      </div>
+      <div class="figure">
+        <div class="caption"><span class="lbl">inline, or a stub</span><code>providers.ts</code></div>
+<pre class="code"><code><span class="k">export const</span> HeavyOnMainThread = Heavy.make(<span class="k">function*</span> () {
+  <span class="k">return</span> {
+    digest: (input, rounds) =&gt; sync(() =&gt; fnv(input, rounds)),
+    countPrimes: (limit) =&gt; limit &lt; <span class="n">2</span>
+      ? err(<span class="k">new</span> <span class="t">HeavyError</span>(<span class="s">`limit must be at least 2…`</span>))
+      : sync(() =&gt; sieve(limit)),
+  }
+})
+
+<span class="k">export const</span> HeavyStub = Heavy.of({ <span class="c">/* … */</span> })</code></pre>
+      </div>
+    </div>
+<pre class="code"><code><span class="k">await</span> run(fingerprint(<span class="s">'hello'</span>, <span class="n">2_000</span>), [HeavyOnWorker])       <span class="c">// the main thread stays responsive</span>
+<span class="k">await</span> run(fingerprint(<span class="s">'hello'</span>, <span class="n">2_000</span>), [HeavyOnMainThread])   <span class="c">// the same answer, blocking</span>
+<span class="k">await</span> run(fingerprint(<span class="s">'hello'</span>, <span class="n">1</span>), [HeavyStub])               <span class="c">// '5:stubbed'</span></code></pre>
+    <div class="prose">
+      <p>The example's tests assert exactly that: the same program produces the same value either side of the boundary, the event loop keeps turning while the worker computes and stops dead while the inline version does, and the two real implementations agree on failures as well as on values. Swapping providers is only transparent if the failure paths match too.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="wire">
+    <div class="head">
+      <div class="eyebrow">What crosses</div>
+      <h2>Service calls cross; effects do not</h2>
+    </div>
+    <div class="prose">
+      <p>An effect is a description, but it is a description made of closures, so it is not structured-cloneable. What crosses is a named call with cloneable arguments, and what comes back maps onto the three ways an effect can end:</p>
     </div>
     <div class="tablewrap">
       <table>
-        <thead><tr><th>Shape</th><th>Example</th><th>Served as</th></tr></thead>
+        <thead><tr><th>Message</th><th>Direction</th><th>Becomes</th></tr></thead>
         <tbody>
-          <tr><td>an <code>Fx</code> value</td><td><code>count: Fx&lt;number&gt;</code></td><td>a zero-argument call</td></tr>
-          <tr><td>a method of cloneable arguments returning an <code>Fx</code></td><td><code>get(threadId, id): Fx&lt;…&gt;</code></td><td>a call</td></tr>
-          <tr><td>a method whose <em>last</em> argument is a callback and which returns <code>Fx&lt;never, E&gt;</code></td><td><code>forThread(id, onMessage): Fx&lt;never, E&gt;</code></td><td>a stream</td></tr>
+          <tr><td><code>{ kind: 'call', id, method, args }</code></td><td>to the worker</td><td>a handler run with its own <code>AbortController</code></td></tr>
+          <tr><td><code>{ kind: 'cancel', id }</code></td><td>to the worker</td><td>that controller aborted</td></tr>
+          <tr><td><code>{ kind: 'ok', id, value }</code></td><td>back</td><td>the value</td></tr>
+          <tr><td><code>{ kind: 'err', id, error }</code></td><td>back</td><td>an expected failure, decoded into its class, in the error channel</td></tr>
+          <tr><td><code>{ kind: 'defect', id, message }</code></td><td>back</td><td>a <code>Die</code>: a bug in the worker is a bug here too</td></tr>
         </tbody>
       </table>
     </div>
     <div class="prose">
-      <p>Anything else cannot: a plain value, a method returning a plain value, a callback anywhere but last, a callback on a method that completes. The diagnostic names the service and the member, and it fires at the entry of the list that is wrong.</p>
-    </div>
-    <div class="diagnostic">
-      <header><span class="code">TS2322</span><span>a plain value in the contract</span></header>
-      <pre>Type 'Service&lt;"Crypto", Crypto&gt;' is not assignable to type 'Service&lt;"Crypto", Crypto&gt; &amp; <span class="hi">"e2: Crypto.deviceId cannot cross a worker boundary - only Fx values, Fx-returning methods, and trailing-callback streams can"</span>'.</pre>
-    </div>
-    <div class="diagnostic">
-      <header><span class="code">TS2345</span><span>serving what the runtime does not provide</span></header>
-      <pre>Argument of type 'Runtime&lt;"Config" | "Crypto"&gt;' is not assignable to parameter of type 'Runtime&lt;"Config" | "Crypto"&gt; &amp; <span class="hi">"e2: serve: Mps is not provided by this runtime"</span>'.</pre>
-    </div>
-    <div class="prose">
-      <p>Three members in the reference application failed the rule when it was introduced, and each fix improved the contract. <code>Mps.describe</code> returned a plain object and became an <code>Fx</code> value. <code>Network.onInbound</code> returned an unsubscribe function and became <code>inbound(onBatch): Fx&lt;never&gt;</code>, which <code>Receive</code> now forks, so unsubscribing is structural. <code>Crypto.deviceId</code> is a plain value, and <code>Crypto</code> is simply not served.</p>
+      <p>Structured clone drops prototypes, so an error thrown in the worker arrives as plain data. <code>decodeHeavyError</code> rebuilds it; without it, the caller would hold an object that fails <code>instanceof</code>. That function is the one piece of the protocol a contract cannot express, and it is short enough to review.</p>
     </div>
   </section>
 
   <!-- ============================================================ -->
-  <section id="streams">
+  <section id="cancel">
     <div class="head">
-      <div class="eyebrow">Streams</div>
-      <h2>A trailing callback and a never-completing effect</h2>
-    </div>
-    <div class="prose">
-      <p>e2 has no <code>Stream</code>. A subscription is an effect that never completes on its own, delivers each value to a callback, and runs until interrupted. Fork it to subscribe, interrupt the fiber to unsubscribe, which structured concurrency does for you when the parent finishes. The bridge recognises the shape on both sides: on the main thread a trailing function argument selects the stream path; in the worker <code>serve</code> supplies the callback and turns each invocation into an <code>event</code> reply, until the caller's fiber is interrupted and a <code>cancel</code> crosses back.</p>
-    </div>
-<pre class="code"><code><span class="c">// the contract, unchanged by the boundary</span>
-<span class="k">readonly</span> forThread: (threadId: <span class="t">string</span>, onMessage: (message: <span class="t">Message</span>) =&gt; <span class="k">void</span>) =&gt; <span class="t">Fx</span>&lt;<span class="k">never</span>, <span class="t">DomainError</span>&gt;
-
-<span class="c">// the consumer, on the main thread</span>
-<span class="k">const</span> subscription = <span class="y">yield*</span> fork(receive.forThread(<span class="s">'thread-a'</span>, (message) =&gt; render([message])))
-<span class="c">// … later, or when the parent ends:</span>
-<span class="y">yield*</span> interruptFiber(subscription)</code></pre>
-  </section>
-
-  <!-- ============================================================ -->
-  <section id="codec">
-    <div class="head">
-      <div class="eyebrow">The codec</div>
-      <h2>The one thing a contract cannot say</h2>
-    </div>
-    <div class="prose">
-      <p>Structured clone drops prototypes. A <code>NotFound</code> thrown in the worker arrives on the main thread as a plain object, and something has to rebuild it. That is the codec, <code>{ encode, decode }</code>, passed to both <code>serve</code> and <code>link</code>, and it is the application's. It is hand-written, one case per error class, and it is exactly the kind of code that rots. Effect's <code>Schema.TaggedRequest</code> generates the equivalent; that is a genuine advantage of carrying a schema, noted plainly.</p>
-    </div>
-  </section>
-
-  <!-- ============================================================ -->
-  <section id="under">
-    <div class="head">
-      <div class="eyebrow">Under the hood</div>
-      <h2>No manifest, no glue</h2>
+      <div class="eyebrow">Cancellation and lifetime</div>
+      <h2>Interruption crosses the thread; the worker dies with the scope</h2>
     </div>
     <div class="prose">
       <ul>
-        <li>The remote object is a <code>Proxy</code>. Every member you read on it is an object that is <strong>both callable and a <code>Suspend</code> instruction</strong>, so <code>local.get(a, b)</code>, <code>yield* local.count</code> and <code>Fx.map(f)(local.count)</code> all work without the client knowing which members are methods and which are values.</li>
-        <li>The worker decides per request: it does <code>yield* Key</code>, looks at the real member, and calls it or yields it. A member that does not exist is a defect with the service and member in the message.</li>
-        <li>Every request is a forked fiber in the worker, so cancellation is uniform: a unary call and a stream are interrupted the same way, and their finalizers run.</li>
-        <li>The proxy's round-trip cost is not measurable against the transport: 0.020 ms before, 0.023 ms after, in the reference bench.</li>
+        <li><strong><code>call</code> is an <code>async_</code> whose cleanup posts <code>cancel</code>.</strong> Interrupting the caller, by <code>interruptFiber</code>, a lost <code>race</code> or a <code>timeout</code>, aborts the computation in the worker. Without it a core would keep spinning on work nobody wants.</li>
+        <li><strong>The worker's handlers are time-sliced.</strong> A worker in a synchronous loop never reaches its event loop, so a <code>cancel</code> would sit undelivered. Yielding to the macrotask queue every few milliseconds is what lets it land.</li>
+        <li><strong><code>openLink</code> is an <code>acquire</code>.</strong> The worker is terminated when the runtime's scope closes, on success, failure or interruption alike. A runtime keeps one worker across many calls; nothing has to remember to call <code>terminate</code>.</li>
       </ul>
     </div>
-    <div class="callout">
-      <span class="t">Why Effect cannot mirror this</span>
-      A <code>Context.Tag</code> carries no runtime shape, and Effect's position is Schema at every boundary, so it keeps one <code>TaggedRequest</code> class per method plus a handler per request. That is safer on an untrusted wire; on a same-origin worker it costs a class per method. Both positions are reasonable. This one is e2's.
+<pre class="code"><code><span class="k">const</span> program = gen(<span class="k">function*</span> () {
+  <span class="k">const</span> heavy = <span class="y">yield*</span> Heavy
+  <span class="k">const</span> abandoned = <span class="y">yield*</span> fork(heavy.digest(<span class="s">'x'</span>.repeat(<span class="n">64</span>), <span class="n">10_000_000</span>))
+  <span class="y">yield*</span> sleep(<span class="n">20</span>)
+  <span class="y">yield*</span> interruptFiber(abandoned)            <span class="c">// the worker stops computing</span>
+  <span class="k">return</span> <span class="y">yield*</span> heavy.digest(<span class="s">'hello'</span>, <span class="n">1_000</span>)  <span class="c">// answered at once, not queued behind it</span>
+})</code></pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="design">
+    <div class="head">
+      <div class="eyebrow">Designing for a boundary</div>
+      <h2>Contracts that can cross</h2>
+    </div>
+    <div class="prose">
+      <p>Because a service is looked up by a name and its members are reached by name, the forwarding provider can be generic: one <code>Proxy</code> that turns every member into a call, one handler table built from the real service on the worker side. That is application code, not core, and it works for any contract whose members have one of three shapes:</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Shape</th><th>Example</th><th>Crosses as</th></tr></thead>
+        <tbody>
+          <tr><td>an <code>Fx</code> value</td><td><code>count: Fx&lt;number&gt;</code></td><td>a zero-argument call</td></tr>
+          <tr><td>a method of cloneable arguments returning an <code>Fx</code></td><td><code>get(threadId, id): Fx&lt;…&gt;</code></td><td>a call</td></tr>
+          <tr><td>a method whose <em>last</em> argument is a callback and which returns <code>Fx&lt;never, E&gt;</code></td><td><code>forThread(id, onMessage): Fx&lt;never, E&gt;</code></td><td>a stream: each callback invocation is a message, interrupting the caller ends it</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>A plain value, a method returning a plain value, or a callback anywhere but last cannot cross. Those are usually worth changing anyway: a subscription that returns an unsubscribe function becomes an effect that never completes, which <code>fork</code> starts and structured concurrency ends.</p>
     </div>
   </section>
 

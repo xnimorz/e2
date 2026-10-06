@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>e2 · Guides</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232544C9%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22Helvetica,Arial,sans-serif%22 font-size=%2217%22 font-weight=%22700%22 fill=%22white%22 text-anchor=%22middle%22%3Ee2%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -21,6 +22,7 @@
     <li><a href="concurrency.html">Concurrency &amp; resources</a></li>
     <li><a href="workers.html">Workers</a></li>
     <li><a href="guides.html" aria-current="page">Guides</a></li>
+    <li><a href="playground.html">Playground</a></li>
   </ol>
   <div class="onpage">
     <div class="lbl">On this page</div>
@@ -34,14 +36,14 @@
       <li><a href="#extend">Extend the pipeline</a></li>
     </ol>
   </div>
-  <div class="side-foot">e2 · <a href="../README.md">README</a><br>reference app · <a href="../prototype/e2/src/">prototype/e2/src</a></div>
+  <div class="side-foot"><a href="https://github.com/xnimorz/e2">github.com/xnimorz/e2</a></div>
 </nav>
 
 <main>
   <header class="page">
     <div class="eyebrow">e2 · guides</div>
     <h1>Seven things you will actually do, in order</h1>
-    <p class="lede">Each guide is a sequence of steps with the code you would write. The examples are taken from the reference application, an end-to-end-encrypted messaging client split across a main thread and a worker, so every snippet has a real home in <code>prototype/e2/src</code>.</p>
+    <p class="lede">Each guide is a sequence of steps with the code you would write. The examples follow one application throughout, an end-to-end-encrypted messaging client split across a main thread and a worker, so the services they mention (<code>Crypto</code>, <code>LocalStore</code>, <code>Mps</code>, <code>Send</code>, <code>Receive</code>) fit together. The <a href="playground.html">playground</a> has smaller versions you can run.</p>
   </header>
 
   <!-- ============================================================ -->
@@ -140,7 +142,7 @@
 <span class="k">const</span> result = <span class="k">await</span> run(program, [Config, offline, LocalStoreLive, CryptoLive, MpsLive, SendLive, <span class="c">/* … */</span>])</code></pre>
       </div></li>
       <li><div><b>Prefer <code>make</code> for a stateful double.</b><p><code>Store.of(new Map())</code> is one map shared by every runtime that lists it. <code>Store.make(function* () { const rows = new Map(); return { … } })</code> is a fresh map per build.</p></div></li>
-      <li><div><b>Assert on behaviour through the services.</b><p>The reference suite reads <code>LocalStore.count</code>, <code>LocalStore.writes</code> and <code>ServerFetch.fetchCount</code> to assert "a failed send leaves no phantom row" and "fifty envelopes are one write". Contracts that expose their counters are testable across a worker for free.</p></div></li>
+      <li><div><b>Assert on behaviour through the services.</b><p>A test can read <code>LocalStore.count</code>, <code>LocalStore.writes</code> and <code>ServerFetch.fetchCount</code> to assert "a failed send leaves no phantom row" and "fifty envelopes are one write". Contracts that expose their counters are testable without reaching inside, and across a worker too.</p></div></li>
       <li><div><b>Use <code>runSync</code> when nothing suspends.</b><p>Synchronous providers and a synchronous program run in a plain function call. Reaching an asynchronous operation produces <code>Die(AsyncBoundary)</code>, never a hang.</p></div></li>
     </ol>
   </section>
@@ -201,29 +203,33 @@
       <div class="eyebrow">Guide 6</div>
       <h2>Put a service in a worker</h2>
     </div>
+    <div class="prose">
+      <p>The steps follow <a href="https://github.com/xnimorz/e2/tree/master/examples/worker"><code>examples/worker</code></a>, which moves a CPU-bound <code>Heavy</code> service off the main thread. The <a href="workers.html">Workers</a> page explains why each piece is shaped the way it is.</p>
+    </div>
     <ol class="steps">
-      <li><div><b>Make sure every member of the contract can cross.</b><p>An <code>Fx</code> value, a method of cloneable arguments returning an <code>Fx</code>, or a trailing-callback method returning <code>Fx&lt;never, E&gt;</code>. If a member cannot, the compiler names it. Either change its shape or leave that service in the worker.</p></div></li>
-      <li><div><b>In the worker, build the runtime and serve the keys.</b>
-<pre class="code"><code><span class="k">const</span> rt = <span class="k">await</span> runtime([<span class="c">/* … */</span>])
-serve(rt, [Mps, Send, Receive, SearchIndex, LocalStore], codec)</code></pre>
+      <li><div><b>Make sure every member of the contract can cross.</b><p>An <code>Fx</code> value, a method of cloneable arguments returning an <code>Fx</code>, or a trailing-callback method returning <code>Fx&lt;never, E&gt;</code>. A member that returns a plain value, or takes a callback anywhere but last, has to change shape first.</p></div></li>
+      <li><div><b>In the worker, answer calls by method name.</b><p>Each call gets its own <code>AbortController</code>; a <code>cancel</code> aborts it. Reply <code>ok</code> with the value, <code>err</code> with plain data for an expected failure, <code>defect</code> for anything else. Slice long loops so a <code>cancel</code> can be delivered.</p>
+<pre class="code"><code><span class="k">const</span> handlers = {
+  digest: ([input, rounds], signal) =&gt; digest(input, rounds, signal),
+  countPrimes: ([limit], signal) =&gt; countPrimes(limit, signal),
+}</code></pre>
       </div></li>
-      <li><div><b>On the main thread, link the worker and remote the keys.</b>
-<pre class="code"><code><span class="k">const</span> Worker = link(<span class="s">'MpsWorker'</span>, <span class="k">new</span> <span class="t">URL</span>(<span class="s">'../worker/main.ts'</span>, <span class="k">import</span>.meta.url), codec)
-<span class="k">await</span> runtime([MessageListLive, Worker, ...remote(Worker, [Mps, Send, Receive])])</code></pre>
-      </div></li>
-      <li><div><b>Write the consumer as if nothing crossed.</b>
-<pre class="code"><code><span class="k">export const</span> MessageListLive = MessageList.make(<span class="k">function*</span> () {
-  <span class="k">const</span> mps = <span class="y">yield*</span> Mps
-  <span class="k">const</span> send = <span class="y">yield*</span> Send
-  <span class="k">const</span> receive = <span class="y">yield*</span> Receive
+      <li><div><b>On the main thread, write a provider that forwards.</b>
+<pre class="code"><code><span class="k">export const</span> HeavyOnWorker = Heavy.make(<span class="k">function*</span> () {
+  <span class="c">// acquire: the worker is terminated when the runtime closes</span>
+  <span class="k">const</span> link = <span class="y">yield*</span> openLink(<span class="k">new</span> <span class="t">URL</span>(<span class="s">'./heavy.worker.ts'</span>, <span class="k">import</span>.meta.url))
   <span class="k">return</span> {
-    compose: (threadId, body) =&gt; send.send(threadId, { kind: <span class="s">'text'</span>, body }),
-    live: (threadId) =&gt; receive.forThread(threadId, (message) =&gt; render([message])),
-    <span class="c">// …</span>
+    digest: (input, rounds) =&gt; call(link, <span class="s">'digest'</span>, [input, rounds], decodeHeavyError),
+    countPrimes: (limit) =&gt; call(link, <span class="s">'countPrimes'</span>, [limit], decodeHeavyError),
   }
 })</code></pre>
+      <p><code>call</code> is an <code>async_</code> whose cleanup posts <code>cancel</code>, so interrupting the caller stops the work on the other thread.</p></div></li>
+      <li><div><b>Put it in the list. Change nothing else.</b>
+<pre class="code"><code><span class="k">await using</span> rt = <span class="k">await</span> runtime([HeavyOnWorker])        <span class="c">// was [HeavyOnMainThread]</span>
+<span class="k">await</span> rt.run(fingerprint(<span class="s">'hello'</span>, <span class="n">2_000</span>))           <span class="c">// the program does `yield* Heavy`, as before</span></code></pre>
       </div></li>
-      <li><div><b>Keep the codec honest.</b><p>Every error class that can cross needs a case in <code>decodeError</code>. That file is the whole protocol now, so it is short enough to review.</p></div></li>
+      <li><div><b>Keep the error decoder honest.</b><p>Structured clone drops prototypes. Every error class that can cross needs a case in <code>decodeHeavyError</code>, or the caller receives an object that fails <code>instanceof</code>.</p></div></li>
+      <li><div><b>Test that both sides agree.</b><p>Run the same program against <code>[HeavyOnMainThread]</code> and <code>[HeavyOnWorker]</code> and compare, for failures as well as for values. Swapping providers is only transparent if the failure paths match.</p></div></li>
     </ol>
   </section>
 
