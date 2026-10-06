@@ -13,6 +13,7 @@ import {
   err,
   fromPromise,
   gen,
+  map,
   mapError,
   ok,
   retry,
@@ -27,6 +28,7 @@ import {
   Git,
   Log,
   Npm,
+  OtpRejected,
   Prompt,
   RegistryUnavailable,
   Shell,
@@ -43,49 +45,83 @@ export const ConsoleLog = Log.of({
   info: (line) => sync(() => console.log(`  ${line}`)),
 })
 
-/** Asks on the terminal. Interrupting while it waits stops listening. */
-export const TerminalPrompt = Prompt.of({
-  confirm: (question) =>
-    async_<boolean, never>((resume) => {
-      process.stdout.write(`${question} [y/N] `)
-      const onData = (data: Buffer) => {
-        process.stdin.pause()
-        resume(ok(/^y(es)?$/i.test(data.toString().trim())))
-      }
-      process.stdin.once('data', onData)
-      return () => {
-        process.stdin.off('data', onData)
-        process.stdin.pause()
-      }
-    }),
-})
+/** One line from the terminal. Interrupting while it waits stops listening. */
+const readLine = (question: string) =>
+  async_<string, never>((resume) => {
+    process.stdout.write(`${question} `)
+    const onData = (data: Buffer) => {
+      process.stdin.pause()
+      resume(ok(data.toString().trim()))
+    }
+    process.stdin.once('data', onData)
+    process.stdin.resume()
+    return () => {
+      process.stdin.off('data', onData)
+      process.stdin.pause()
+    }
+  })
 
-/** `--yes`, and CI: nobody is there to ask. */
-export const AutoConfirm = Prompt.of({ confirm: () => ok(true) })
+/** Asks on the terminal. `assumeYes` (`--yes`) skips confirmations, never questions. */
+export const terminalPrompt = (assumeYes: boolean) =>
+  Prompt.of({
+    confirm: (question) =>
+      assumeYes
+        ? ok(true)
+        : map((answer: string) => /^y(es)?$/i.test(answer))(
+            readLine(`${question} [y/N]`)
+          ),
+    ask: readLine,
+  })
 
 // --- shell ----------------------------------------------------------------------------------
+
+/** Reads a stream to the end, echoing it to `echo` as it arrives. */
+async function collect(
+  stream: ReadableStream<Uint8Array>,
+  echo?: NodeJS.WriteStream
+): Promise<string> {
+  const decoder = new TextDecoder()
+  const reader = stream.getReader()
+  let text = ''
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    text += decoder.decode(read.value, { stream: true })
+    echo?.write(read.value)
+  }
+  return text + decoder.decode()
+}
 
 export const ShellLive = Shell.make(function* () {
   const config = yield* Config
   return {
     run: (command, options = {}) =>
       gen(function* () {
+        const captured = options.quiet === true || options.tee === true
         const { code, stdout, stderr } = yield* fromPromise(async (signal) => {
           // The fiber's signal kills the process, so Ctrl+C or a timeout stops `npm install` too.
           const child = Bun.spawn([...command], {
             cwd: options.cwd ?? config.root,
+            env:
+              options.env === undefined
+                ? undefined
+                : { ...process.env, ...options.env },
             stdin: 'ignore',
-            stdout: options.quiet ? 'pipe' : 'inherit',
-            stderr: options.quiet ? 'pipe' : 'inherit',
+            stdout: captured ? 'pipe' : 'inherit',
+            stderr: captured ? 'pipe' : 'inherit',
             signal,
           })
           const [exitCode, out, error] = await Promise.all([
             child.exited,
-            options.quiet
-              ? new Response(child.stdout as ReadableStream).text()
+            captured
+              ? collect(
+                  child.stdout as ReadableStream<Uint8Array>,
+                  options.tee ? process.stdout : undefined
+                )
               : '',
-            options.quiet
-              ? new Response(child.stderr as ReadableStream).text()
+            captured
+              ? collect(
+                  child.stderr as ReadableStream<Uint8Array>,
+                  options.tee ? process.stderr : undefined
+                )
               : '',
           ])
           return { code: exitCode, stdout: out.trim(), stderr: error.trim() }
@@ -148,16 +184,6 @@ export const GitLive = Git.make(function* () {
             'origin',
             `refs/tags/${tag}`
           )) !== ''
-        )
-      }),
-    isOn: (branch) =>
-      gen(function* () {
-        yield* git('fetch', '--quiet', 'origin', branch)
-        return yield* succeeds(
-          'merge-base',
-          '--is-ancestor',
-          'HEAD',
-          `origin/${branch}`
         )
       }),
     pushTag: (tag, message) =>
@@ -244,17 +270,41 @@ export const npmWith = (retries: Schedule) =>
 
       publish: (tarball, options) =>
         gen(function* () {
-          yield* shell.run([
-            'npm',
-            'publish',
-            tarball,
-            '--access',
-            'public',
-            '--tag',
-            options.tag,
-            ...(options.provenance ? ['--provenance'] : []),
-            ...(options.dryRun ? ['--dry-run'] : []),
-          ])
+          const published = yield* attemptFx(
+            shell.run(
+              [
+                'npm',
+                'publish',
+                tarball,
+                '--access',
+                'public',
+                '--tag',
+                options.tag,
+                ...(options.dryRun ? ['--dry-run'] : []),
+              ],
+              {
+                // Shown as it runs, and kept to tell an OTP problem from any other.
+                tee: true,
+                // In the environment, not the command line: it stays out of
+                // the process list and out of any error message.
+                env:
+                  options.otp === undefined
+                    ? undefined
+                    : { npm_config_otp: options.otp },
+              }
+            )
+          )
+          if (published.ok) return
+          if (/\bEOTP\b|one-time pass/i.test(published.error.output)) {
+            return yield* err(
+              new OtpRejected(
+                options.otp === undefined
+                  ? 'npm needs a one-time password'
+                  : 'npm did not accept the one-time password'
+              )
+            )
+          }
+          return yield* err(published.error)
         }),
     }
   })

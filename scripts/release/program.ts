@@ -74,10 +74,6 @@ export const unpublished = (version: string) =>
       if (!pending.includes(pkg))
         yield* log.info(`${pkg.name}@${version} is already on npm; skipping it`)
     }
-    if (pending.length === 0)
-      return yield* err(
-        new ReleaseBlocked(`every package is already published at ${version}`)
-      )
     return pending
   })
 
@@ -129,6 +125,11 @@ export const release = gen(function* () {
   const tag = `v${version}`
   yield* repository.check(tag)
   const pending = yield* unpublished(version)
+  if (pending.length === 0) {
+    return yield* err(
+      new ReleaseBlocked(`every package is already published at ${version}`)
+    )
+  }
   yield* delivery.preflight
   yield* log.info(
     `to release: ${pending.map((pkg) => `${pkg.name}@${version}`).join(', ')}`
@@ -153,7 +154,7 @@ export const release = gen(function* () {
     ),
   })
 })
-// Fx<string, ReleaseBlocked | CommandFailed | RegistryUnavailable | VerificationFailed | Declined,
+// Fx<string, ReleaseBlocked | CommandFailed | RegistryUnavailable | VerificationFailed | OtpRejected | Declined,
 //    'Log' | 'Repository' | 'Delivery' | 'Workspace' | 'Verifier' | 'Config' | 'Npm'>
 
 export type ReleaseError =

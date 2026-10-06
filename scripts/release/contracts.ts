@@ -42,6 +42,11 @@ export class RegistryUnavailable extends TaggedError<'RegistryUnavailable'> {
   readonly _tag = 'RegistryUnavailable' as const
 }
 
+/** npm wants a one-time password, or a fresh one: the given code was missing, wrong or expired. */
+export class OtpRejected extends TaggedError<'OtpRejected'> {
+  readonly _tag = 'OtpRejected' as const
+}
+
 /** The person running the release said no. */
 export class Declined extends TaggedError<'Declined'> {
   readonly _tag = 'Declined' as const
@@ -54,8 +59,8 @@ export interface Config {
   readonly branch: string
   readonly distTag: string
   readonly packages: readonly Package[]
-  /** The tag a CI run was triggered by, if any. */
-  readonly pushedTag: string | undefined
+  /** `--otp`: a one-time password given up front, used if it is still valid at publish time. */
+  readonly otp: string | undefined
 }
 export const Config = service<Config>()('Config')
 
@@ -66,11 +71,21 @@ export interface Output {
   readonly stderr: string
 }
 
+export interface ShellOptions {
+  readonly cwd?: string
+  /** Capture output instead of showing it. */
+  readonly quiet?: boolean
+  /** Show output and capture it too, for a caller that inspects a failure. */
+  readonly tee?: boolean
+  /** Added to the environment. Secrets go here, not in the command line. */
+  readonly env?: Readonly<Record<string, string>>
+}
+
 export interface Shell {
-  /** `quiet` captures output; otherwise it streams to the terminal. Interrupting kills the process. */
+  /** Runs a command. Interrupting kills the process. */
   run(
     command: readonly string[],
-    options?: { readonly cwd?: string; readonly quiet?: boolean }
+    options?: ShellOptions
   ): Fx<Output, CommandFailed>
 }
 export const Shell = service<Shell>()('Shell')
@@ -83,6 +98,8 @@ export const Log = service<Log>()('Log')
 
 export interface Prompt {
   confirm(question: string): Fx<boolean>
+  /** A line of input, trimmed; empty when nothing was typed. */
+  ask(question: string): Fx<string>
 }
 export const Prompt = service<Prompt>()('Prompt')
 
@@ -94,8 +111,6 @@ export interface Git {
   readonly head: Fx<string, CommandFailed>
   remoteHead(branch: string): Fx<string, CommandFailed>
   tagExists(tag: string): Fx<boolean, CommandFailed>
-  /** Whether HEAD is contained in `origin/<branch>`. */
-  isOn(branch: string): Fx<boolean, CommandFailed>
   pushTag(tag: string, message: string): Fx<void, CommandFailed>
 }
 export const Git = service<Git>()('Git')
@@ -115,10 +130,11 @@ export interface Npm {
     tarball: string,
     options: {
       readonly tag: string
-      readonly provenance: boolean
       readonly dryRun: boolean
+      /** A one-time password, for an account with two-factor authentication. */
+      readonly otp?: string
     }
-  ): Fx<void, CommandFailed>
+  ): Fx<void, CommandFailed | OtpRejected>
 }
 export const Npm = service<Npm>()('Npm')
 
@@ -157,10 +173,10 @@ export interface Repository {
 }
 export const Repository = service<Repository>()('Repository')
 
-/** What happens to verified tarballs: a dry run, a tag for CI, or a publish. */
+/** What happens to verified tarballs: a publish, or a dry run of one. */
 export interface Delivery {
   /** Checked before the slow part, so a doomed release fails in seconds. */
   readonly preflight: Fx<void, ReleaseBlocked>
-  deliver(release: Release): Fx<string, CommandFailed | Declined>
+  deliver(release: Release): Fx<string, CommandFailed | OtpRejected | Declined>
 }
 export const Delivery = service<Delivery>()('Delivery')

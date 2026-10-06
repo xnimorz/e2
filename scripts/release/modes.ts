@@ -1,9 +1,9 @@
 /**
- * What differs between `bun run release`, `--dry-run`, `--publish` and `--ci`:
+ * What differs between `bun run release` and `bun run release --dry-run`:
  * which repository checks run, and what happens to verified tarballs. Each
  * mode is a choice of one Repository and one Delivery in the provider list.
  */
-import { err, forEach, gen, ok } from 'e2'
+import { attemptFx, err, forEach, gen, ok } from 'e2'
 import {
   Config,
   Declined,
@@ -20,7 +20,7 @@ import {
 
 // --- repositories ---------------------------------------------------------------------
 
-/** A release cut by hand: from a clean, pushed master, with the tag still free. */
+/** A real release: from a clean, pushed master, with the tag still free. */
 export const LocalRepository = Repository.make(function* () {
   const config = yield* Config
   const git = yield* Git
@@ -51,28 +51,6 @@ export const LocalRepository = Repository.make(function* () {
   }
 })
 
-/** A release triggered by a pushed tag: the tag must match the version and sit on master. */
-export const CiRepository = Repository.make(function* () {
-  const config = yield* Config
-  const git = yield* Git
-  return {
-    check: (tag) =>
-      gen(function* () {
-        if (config.pushedTag !== tag) {
-          return yield* err(
-            new ReleaseBlocked(
-              `the pushed tag is ${config.pushedTag ?? '(none)'}, but package.json says ${tag}`
-            )
-          )
-        }
-        if (!(yield* git.isOn(config.branch)))
-          return yield* err(
-            new ReleaseBlocked(`${tag} is not on ${config.branch}`)
-          )
-      }),
-  }
-})
-
 /** A dry run releases nothing, so it can run from anywhere. */
 export const AnyRepository = Repository.of({ check: () => ok(undefined) })
 
@@ -83,56 +61,13 @@ export const AnyRepository = Repository.of({ check: () => ok(undefined) })
 const names = (release: Release): string =>
   release.pending.map((pkg) => pkg.name).join(', ')
 
-/** `npm publish` for each tarball, in order. */
-const publisher = gen(function* () {
-  const npm = yield* Npm
-  const config = yield* Config
-  return (
-    tarballs: readonly Packed[],
-    options: { readonly provenance: boolean; readonly dryRun: boolean }
-  ) =>
-    forEach((tarball: Packed) =>
-      npm.publish(tarball.tarball, { tag: config.distTag, ...options })
-    )(tarballs)
-})
-
-export const DryRunDelivery = Delivery.make(function* () {
-  const log = yield* Log
-  const publish = yield* publisher
-  return {
-    preflight: ok(undefined),
-    deliver: (release) =>
-      gen(function* () {
-        yield* log.step('Publish (dry run)')
-        yield* publish(release.tarballs, { provenance: false, dryRun: true })
-        return 'dry run complete; nothing was published or tagged'
-      }),
-  }
-})
-
-/** CI publishes what a pushed tag asked for, with provenance linking each package to the run. */
-export const CiDelivery = Delivery.make(function* () {
-  const log = yield* Log
-  const publish = yield* publisher
-  return {
-    preflight: ok(undefined),
-    deliver: (release) =>
-      gen(function* () {
-        yield* log.step('Publish')
-        yield* publish(release.tarballs, { provenance: true, dryRun: false })
-        return `published ${names(release)} @ ${release.version}`
-      }),
-  }
-})
-
-/** `--publish`: from this machine, after asking, then the tag. */
+/** Publishes from this machine, asking for npm's one-time password, then pushes the tag. */
 export const MachineDelivery = Delivery.make(function* () {
   const log = yield* Log
   const npm = yield* Npm
   const git = yield* Git
   const prompt = yield* Prompt
   const config = yield* Config
-  const publish = yield* publisher
   return {
     preflight: gen(function* () {
       const user = yield* npm.whoami
@@ -146,34 +81,56 @@ export const MachineDelivery = Delivery.make(function* () {
       gen(function* () {
         yield* log.step('Publish')
         const yes = yield* prompt.confirm(
-          `Publish ${names(release)} @ ${release.version} as "${config.distTag}" from this machine, then push ${release.tag}?`
+          `Publish ${names(release)} @ ${release.version} as "${config.distTag}", then push ${release.tag}?`
         )
         if (!yes)
           return yield* err(new Declined('nothing was published or tagged'))
-        // npm asks for a one-time password itself when the account requires one.
-        yield* publish(release.tarballs, { provenance: false, dryRun: false })
+
+        // Asked for here, not at startup: a code lasts about 30 seconds, and the
+        // checks before this point take minutes.
+        let otp =
+          config.otp ??
+          (yield* prompt.ask(
+            'npm one-time password (press Enter if your account has none):'
+          ))
+        for (const tarball of release.tarballs) {
+          for (let attempt = 1; ; attempt++) {
+            const published = yield* attemptFx(
+              npm.publish(tarball.tarball, {
+                tag: config.distTag,
+                dryRun: false,
+                otp: otp === '' ? undefined : otp,
+              })
+            )
+            if (published.ok) break
+            if (published.error._tag !== 'OtpRejected' || attempt === 3)
+              return yield* err(published.error)
+            otp = yield* prompt.ask(
+              `npm did not accept that code. A fresh one-time password for ${tarball.name}:`
+            )
+          }
+        }
+
         yield* git.pushTag(release.tag, `Release ${release.version}`)
         return `published ${names(release)} @ ${release.version} and pushed ${release.tag}`
       }),
   }
 })
 
-/** The default: everything checks out locally, so push the tag and let CI publish. */
-export const TagDelivery = Delivery.make(function* () {
+/** `--dry-run`: `npm publish --dry-run` for each tarball; nothing is published or tagged. */
+export const DryRunDelivery = Delivery.make(function* () {
   const log = yield* Log
-  const git = yield* Git
-  const prompt = yield* Prompt
+  const npm = yield* Npm
+  const config = yield* Config
   return {
     preflight: ok(undefined),
     deliver: (release) =>
       gen(function* () {
-        yield* log.step('Tag')
-        const yes = yield* prompt.confirm(
-          `Everything checks out. Push ${release.tag}? The Release workflow publishes it.`
-        )
-        if (!yes) return yield* err(new Declined('nothing was tagged'))
-        yield* git.pushTag(release.tag, `Release ${release.version}`)
-        return `${release.tag} pushed; follow it at https://github.com/xnimorz/e2/actions/workflows/release.yml`
+        yield* log.step('Publish (dry run)')
+        yield* forEach((tarball: Packed) =>
+          npm.publish(tarball.tarball, { tag: config.distTag, dryRun: true })
+        )(release.tarballs)
+        return 'dry run complete; nothing was published or tagged'
       }),
   }
 })

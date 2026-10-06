@@ -18,6 +18,7 @@ import {
   Git,
   Log,
   Npm,
+  OtpRejected,
   Prompt,
   Shell,
   Verifier,
@@ -28,20 +29,17 @@ import {
 import { npmWith } from './live.ts'
 import {
   AnyRepository,
-  CiDelivery,
-  CiRepository,
   DryRunDelivery,
   LocalRepository,
   MachineDelivery,
-  TagDelivery,
 } from './modes.ts'
 import { release } from './program.ts'
 
 /**
  * The release logic against doubles: no git, no npm, no filesystem. Each
- * test builds a world - a repository state, a registry, a terminal answer -
- * and runs the real program in it, with the mode's real Repository and
- * Delivery. What would have been published or pushed is recorded instead.
+ * test builds a world - a repository state, a registry, a person at the
+ * terminal - and runs the real program in it, with the mode's real Repository
+ * and Delivery. What would have been published or pushed is recorded instead.
  */
 
 const PACKAGES: readonly Package[] = [
@@ -59,15 +57,20 @@ const FILES = [
 interface World {
   versions?: Record<string, string>
   distTag?: string
-  pushedTag?: string
   branch?: string
   clean?: boolean
   behind?: boolean
   tagTaken?: boolean
-  onMaster?: boolean
   published?: readonly string[]
   npmUser?: string
+  /** The answer to "Publish …?". */
   answer?: boolean
+  /** `--otp`. */
+  otpFlag?: string
+  /** What is typed at each one-time-password question, in order. */
+  typed?: readonly string[]
+  /** Codes npm accepts. Absent: the account has no two-factor authentication. */
+  validCodes?: readonly string[]
   packedFiles?: readonly string[]
 }
 
@@ -78,14 +81,16 @@ function world(
   state: World = {},
   verifier: typeof PassingVerifier = PassingVerifier
 ) {
+  const typed = [...(state.typed ?? [])]
   const did = {
     checked: false,
     published: [] as {
       tarball: string
-      provenance: boolean
       dryRun: boolean
+      otp: string | undefined
     }[],
     pushed: [] as string[],
+    confirmed: [] as string[],
     asked: [] as string[],
     log: [] as string[],
   }
@@ -96,7 +101,7 @@ function world(
       branch: 'master',
       distTag: state.distTag ?? 'latest',
       packages: PACKAGES,
-      pushedTag: state.pushedTag,
+      otp: state.otpFlag,
     }),
     Log.of({
       step: (title) => sync(() => void did.log.push(`▸ ${title}`)),
@@ -105,8 +110,13 @@ function world(
     Prompt.of({
       confirm: (question) =>
         sync(() => {
-          did.asked.push(question)
+          did.confirmed.push(question)
           return state.answer ?? true
+        }),
+      ask: (question) =>
+        sync(() => {
+          did.asked.push(question)
+          return typed.shift() ?? ''
         }),
     }),
     Git.of({
@@ -115,7 +125,6 @@ function world(
       head: ok('abc'),
       remoteHead: () => ok(state.behind ? 'def' : 'abc'),
       tagExists: () => ok(state.tagTaken ?? false),
-      isOn: () => ok(state.onMaster ?? true),
       pushTag: (tag) => sync(() => void did.pushed.push(tag)),
     }),
     Npm.of({
@@ -129,14 +138,19 @@ function world(
           size: 1024,
         }),
       publish: (tarball, options) =>
-        sync(
-          () =>
-            void did.published.push({
-              tarball,
-              provenance: options.provenance,
-              dryRun: options.dryRun,
-            })
-        ),
+        gen(function* () {
+          const needsCode = state.validCodes !== undefined && !options.dryRun
+          if (needsCode && !state.validCodes!.includes(options.otp ?? '')) {
+            return yield* err(
+              new OtpRejected('npm did not accept the one-time password')
+            )
+          }
+          did.published.push({
+            tarball,
+            dryRun: options.dryRun,
+            otp: options.otp,
+          })
+        }),
     }),
     Workspace.of({
       version: (pkg) => ok(state.versions?.[pkg.name] ?? '3.0.0'),
@@ -155,29 +169,42 @@ function world(
 const failure = (result: { ok: boolean; error?: unknown }) =>
   result.ok ? undefined : (result.error as { _tag: string; message: string })
 
-describe('bun run release: verify, then push the tag', () => {
-  test('pushes v3.0.0 and publishes nothing itself', async () => {
-    const { did, providers } = world()
-    const result = await run(release, [
-      ...providers,
-      LocalRepository,
-      TagDelivery,
-    ])
-    expect(result.ok).toBe(true)
+const publishing = (state: World = {}) => {
+  const { did, providers } = world({ npmUser: 'xnimorz', ...state })
+  return {
+    did,
+    result: run(release, [...providers, LocalRepository, MachineDelivery]),
+  }
+}
+
+describe('bun run release', () => {
+  test('asks, publishes both packages from this machine, then pushes the tag', async () => {
+    const { did, result } = publishing()
+    expect((await result).ok).toBe(true)
     expect(did.checked).toBe(true)
+    expect(did.confirmed).toHaveLength(1)
+    expect(did.published.map((entry) => entry.tarball)).toEqual([
+      '/out/e2.tgz',
+      '/out/eslint-plugin-e2.tgz',
+    ])
+    expect(did.published.every((entry) => !entry.dryRun)).toBe(true)
     expect(did.pushed).toEqual(['v3.0.0'])
-    expect(did.published).toEqual([])
   })
 
-  test('saying no pushes nothing', async () => {
-    const { did, providers } = world({ answer: false })
-    const result = await run(release, [
-      ...providers,
-      LocalRepository,
-      TagDelivery,
-    ])
-    expect(failure(result)?._tag).toBe('Declined')
+  test('saying no publishes nothing and tags nothing', async () => {
+    const { did, result } = publishing({ answer: false })
+    expect(failure(await result)?._tag).toBe('Declined')
+    expect(did.published).toEqual([])
     expect(did.pushed).toEqual([])
+  })
+
+  test('not logged in to npm stops the release before the slow part', async () => {
+    const { did, result } = publishing({ npmUser: undefined })
+    expect(failure(await result)).toMatchObject({
+      _tag: 'ReleaseBlocked',
+      message: 'not logged in to npm; run `npm login` first',
+    })
+    expect(did.checked).toBe(false)
   })
 
   test.each([
@@ -200,56 +227,123 @@ describe('bun run release: verify, then push the tag', () => {
   ] satisfies [World, string][])(
     'refuses to start when %o',
     async (state, reason) => {
-      const { did, providers } = world(state)
-      const result = await run(release, [
-        ...providers,
-        LocalRepository,
-        TagDelivery,
-      ])
-      expect(failure(result)).toMatchObject({
+      const { did, result } = publishing(state)
+      expect(failure(await result)).toMatchObject({
         _tag: 'ReleaseBlocked',
         message: reason,
       })
-      // Blocked before the slow part: nothing checked, nothing pushed.
+      // Blocked before the slow part: nothing checked, published or pushed.
       expect(did.checked).toBe(false)
+      expect(did.published).toEqual([])
       expect(did.pushed).toEqual([])
     }
   )
 
   test('a prerelease may go out under another dist-tag', async () => {
-    const { did, providers } = world({
+    const { did, result } = publishing({
       distTag: 'next',
       versions: { e2: '3.1.0-beta.1', 'eslint-plugin-e2': '3.1.0-beta.1' },
     })
-    const result = await run(release, [
-      ...providers,
-      LocalRepository,
-      TagDelivery,
-    ])
-    expect(result.ok).toBe(true)
+    expect((await result).ok).toBe(true)
     expect(did.pushed).toEqual(['v3.1.0-beta.1'])
   })
 
   test('a tarball missing its declarations is not released', async () => {
-    const { did, providers } = world({
+    const { did, result } = publishing({
       packedFiles: FILES.filter((file) => file !== 'lib/index.d.ts'),
     })
-    const result = await run(release, [
-      ...providers,
-      LocalRepository,
-      TagDelivery,
-    ])
-    expect(failure(result)).toMatchObject({
+    expect(failure(await result)).toMatchObject({
       _tag: 'VerificationFailed',
       message: 'e2 is missing lib/index.d.ts',
     })
+    expect(did.published).toEqual([])
+  })
+
+  test('re-running after a partial release publishes only what is missing', async () => {
+    const { did, result } = publishing({ published: ['e2'] })
+    expect((await result).ok).toBe(true)
+    expect(did.published.map((entry) => entry.tarball)).toEqual([
+      '/out/eslint-plugin-e2.tgz',
+    ])
+    expect(did.log).toContain('e2@3.0.0 is already on npm; skipping it')
+  })
+})
+
+describe('bun run release: one-time passwords', () => {
+  test('the code is asked for after the checks, right before publishing, and used for both packages', async () => {
+    const { did, result } = publishing({
+      validCodes: ['123456'],
+      typed: ['123456'],
+    })
+    expect((await result).ok).toBe(true)
+    expect(did.asked).toHaveLength(1)
+    expect(did.log.indexOf('▸ Publish')).toBeGreaterThan(
+      did.log.indexOf('▸ Verify the tarballs in a scratch project')
+    )
+    expect(did.published.map((entry) => entry.otp)).toEqual([
+      '123456',
+      '123456',
+    ])
+  })
+
+  test('--otp is used without asking', async () => {
+    const { did, result } = publishing({
+      validCodes: ['654321'],
+      otpFlag: '654321',
+    })
+    expect((await result).ok).toBe(true)
+    expect(did.asked).toEqual([])
+    expect(did.published.map((entry) => entry.otp)).toEqual([
+      '654321',
+      '654321',
+    ])
+  })
+
+  test('an expired code is asked for again, and the release continues', async () => {
+    // The code from --otp expired during the checks; a fresh one is typed.
+    const { did, result } = publishing({
+      validCodes: ['222222'],
+      otpFlag: '111111',
+      typed: ['222222'],
+    })
+    expect((await result).ok).toBe(true)
+    expect(did.asked).toEqual([
+      'npm did not accept that code. A fresh one-time password for e2:',
+    ])
+    expect(did.published.map((entry) => entry.otp)).toEqual([
+      '222222',
+      '222222',
+    ])
+    expect(did.pushed).toEqual(['v3.0.0'])
+  })
+
+  test('an account without two-factor authentication just presses Enter', async () => {
+    const { did, result } = publishing({ typed: [''] })
+    expect((await result).ok).toBe(true)
+    expect(did.published.map((entry) => entry.otp)).toEqual([
+      undefined,
+      undefined,
+    ])
+  })
+
+  test('three rejected codes stop the release without pushing a tag', async () => {
+    const { did, result } = publishing({
+      validCodes: ['999999'],
+      typed: ['1', '2', '3'],
+    })
+    expect(failure(await result)?._tag).toBe('OtpRejected')
+    expect(did.published).toEqual([])
     expect(did.pushed).toEqual([])
   })
 })
 
 describe('bun run release --dry-run', () => {
-  test('publishes with --dry-run, pushes nothing, and runs from any branch', async () => {
-    const { did, providers } = world({ branch: 'feature', clean: false })
+  test('publishes with --dry-run, asks nothing, pushes nothing, and runs from any branch', async () => {
+    const { did, providers } = world({
+      branch: 'feature',
+      clean: false,
+      validCodes: ['123456'],
+    })
     const result = await run(release, [
       ...providers,
       AnyRepository,
@@ -257,89 +351,8 @@ describe('bun run release --dry-run', () => {
     ])
     expect(result.ok).toBe(true)
     expect(did.published.map((entry) => entry.dryRun)).toEqual([true, true])
+    expect(did.asked).toEqual([])
     expect(did.pushed).toEqual([])
-  })
-})
-
-describe('bun run release --publish', () => {
-  test('asks, publishes both packages from this machine, then tags', async () => {
-    const { did, providers } = world({ npmUser: 'xnimorz' })
-    const result = await run(release, [
-      ...providers,
-      LocalRepository,
-      MachineDelivery,
-    ])
-    expect(result.ok).toBe(true)
-    expect(did.asked).toHaveLength(1)
-    expect(did.published.map((entry) => entry.tarball)).toEqual([
-      '/out/e2.tgz',
-      '/out/eslint-plugin-e2.tgz',
-    ])
-    expect(did.pushed).toEqual(['v3.0.0'])
-  })
-
-  test('not logged in to npm stops the release before the slow part', async () => {
-    const { did, providers } = world({ npmUser: undefined })
-    const result = await run(release, [
-      ...providers,
-      LocalRepository,
-      MachineDelivery,
-    ])
-    expect(failure(result)).toMatchObject({
-      _tag: 'ReleaseBlocked',
-      message: 'not logged in to npm; run `npm login` first',
-    })
-    expect(did.checked).toBe(false)
-  })
-
-  test('saying no publishes nothing and tags nothing', async () => {
-    const { did, providers } = world({ npmUser: 'xnimorz', answer: false })
-    const result = await run(release, [
-      ...providers,
-      LocalRepository,
-      MachineDelivery,
-    ])
-    expect(failure(result)?._tag).toBe('Declined')
-    expect(did.published).toEqual([])
-    expect(did.pushed).toEqual([])
-  })
-})
-
-describe('bun run release --ci', () => {
-  test('publishes with provenance for the matching tag', async () => {
-    const { did, providers } = world({ pushedTag: 'v3.0.0' })
-    const result = await run(release, [...providers, CiRepository, CiDelivery])
-    expect(result.ok).toBe(true)
-    expect(
-      did.published.every((entry) => entry.provenance && !entry.dryRun)
-    ).toBe(true)
-    expect(did.pushed).toEqual([])
-  })
-
-  test('re-running after a partial release publishes only what is missing', async () => {
-    const { did, providers } = world({ pushedTag: 'v3.0.0', published: ['e2'] })
-    const result = await run(release, [...providers, CiRepository, CiDelivery])
-    expect(result.ok).toBe(true)
-    expect(did.published.map((entry) => entry.tarball)).toEqual([
-      '/out/eslint-plugin-e2.tgz',
-    ])
-    expect(did.log).toContain('e2@3.0.0 is already on npm; skipping it')
-  })
-
-  test.each([
-    [
-      { pushedTag: 'v2.9.9' },
-      'the pushed tag is v2.9.9, but package.json says v3.0.0',
-    ],
-    [{ pushedTag: 'v3.0.0', onMaster: false }, 'v3.0.0 is not on master'],
-  ] satisfies [World, string][])('refuses when %o', async (state, reason) => {
-    const { did, providers } = world(state)
-    const result = await run(release, [...providers, CiRepository, CiDelivery])
-    expect(failure(result)).toMatchObject({
-      _tag: 'ReleaseBlocked',
-      message: reason,
-    })
-    expect(did.published).toEqual([])
   })
 })
 

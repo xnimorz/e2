@@ -208,10 +208,10 @@ The site is published to GitHub Pages on every push to `master`.
 
 ```bash
 bun run release --dry-run   # check, build, pack, and verify the tarballs in a scratch project
-bun run release             # the same, then push tag vX.Y.Z; the Release workflow publishes to npm
+bun run release             # the same, then npm publish both packages and push tag vX.Y.Z
 ```
 
-`bun run release --publish` publishes from your machine instead, which a package's very first release needs if npm trusted publishing is not set up yet.
+Run `npm login` first. The release asks for npm's one-time password right before publishing, after the checks that take minutes, so the code is still fresh; if npm turns a code down it asks again. `--otp <code>` passes one up front, and `--yes` skips the confirmation. A release interrupted halfway can be re-run: packages already on npm at that version are skipped.
 
 The release script is itself an e2 program: git, npm, the shell and the terminal are services ([`scripts/release/contracts.ts`](scripts/release/contracts.ts)), each mode is a provider list ([`scripts/release.ts`](scripts/release.ts)), and [`scripts/release/release.spec.ts`](scripts/release/release.spec.ts) runs the real release logic against doubles. Ctrl+C stops running commands and removes the scratch project before exiting.
 

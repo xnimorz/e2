@@ -2,12 +2,12 @@
  * Releases every package in scripts/build.ts at the version in package.json,
  * in lockstep: one version, one tag, one release.
  *
- *   bun run release              verify everything, then push tag vX.Y.Z; CI publishes
- *   bun run release --dry-run    verify everything and `npm publish --dry-run`; no tag
- *   bun run release --publish    verify, publish from this machine, then tag
- *   bun run release --ci         what the Release workflow runs for a pushed tag
+ *   bun run release              verify, `npm publish`, then push tag vX.Y.Z
+ *   bun run release --dry-run    verify and `npm publish --dry-run`; no tag
  *
- *   --yes          do not ask before tagging or publishing
+ *   --otp <code>   npm one-time password. Otherwise it is asked for right before
+ *                  publishing, and asked again if npm turns a code down.
+ *   --yes          do not ask for confirmation (an OTP is still asked for if needed)
  *   --tag <name>   npm dist-tag, `latest` by default; required for prereleases
  *
  * The release is an e2 program (release/program.ts). A mode is nothing but a
@@ -20,50 +20,46 @@ import { Cause, assertNever, runtime, type Exit } from 'e2'
 import { PACKAGES } from './build.ts'
 import { Config } from './release/contracts.ts'
 import {
-  AutoConfirm,
   ConsoleLog,
   GitLive,
   NpmLive,
   ShellLive,
-  TerminalPrompt,
   VerifierLive,
+  terminalPrompt,
   WorkspaceLive,
 } from './release/live.ts'
 import {
   AnyRepository,
-  CiDelivery,
-  CiRepository,
   DryRunDelivery,
   LocalRepository,
   MachineDelivery,
-  TagDelivery,
 } from './release/modes.ts'
 import { release, type ReleaseError } from './release/program.ts'
 
 const args = process.argv.slice(2)
-const mode = args.includes('--ci')
-  ? 'ci'
-  : args.includes('--dry-run')
-    ? 'dry-run'
-    : args.includes('--publish')
-      ? 'publish'
-      : 'tag'
-const tagIndex = args.indexOf('--tag')
-const distTag = tagIndex === -1 ? 'latest' : args[tagIndex + 1]
-if (distTag === undefined || distTag.startsWith('--')) {
-  console.error('release: --tag needs a value')
-  process.exit(1)
+const mode = args.includes('--dry-run') ? 'dry-run' : 'publish'
+
+/** The value after `--flag`, `fallback` when the flag is absent. */
+const option = (flag: string, fallback: string | undefined) => {
+  const index = args.indexOf(flag)
+  if (index === -1) return fallback
+  const value = args[index + 1]
+  if (value === undefined || value.startsWith('--')) {
+    console.error(`release: ${flag} needs a value`)
+    process.exit(1)
+  }
+  return value
 }
+const distTag = option('--tag', 'latest')!
 
 const ConfigLive = Config.of({
   root: join(import.meta.dir, '..'),
   branch: 'master',
   distTag,
   packages: PACKAGES,
-  pushedTag: process.env.GITHUB_REF_NAME,
+  otp: option('--otp', undefined),
 })
-const PromptLive =
-  args.includes('--yes') || mode === 'ci' ? AutoConfirm : TerminalPrompt
+const PromptLive = terminalPrompt(args.includes('--yes'))
 
 const shared = [
   ConfigLive,
@@ -79,14 +75,10 @@ const shared = [
 // Each list is checked on its own: a mode that forgot a service would not compile.
 const app = await (() => {
   switch (mode) {
-    case 'tag':
-      return runtime([...shared, LocalRepository, TagDelivery])
     case 'publish':
       return runtime([...shared, LocalRepository, MachineDelivery])
     case 'dry-run':
       return runtime([...shared, AnyRepository, DryRunDelivery])
-    case 'ci':
-      return runtime([...shared, CiRepository, CiDelivery])
   }
 })()
 
@@ -114,6 +106,8 @@ const describe = (error: ReleaseError): string => {
       return `verification failed: ${error.message}`
     case 'RegistryUnavailable':
       return `the npm registry is unavailable: ${error.message}`
+    case 'OtpRejected':
+      return `${error.message}; run \`bun run release\` again, packages already published are skipped`
     case 'Declined':
       return `cancelled; ${error.message}`
     default:
