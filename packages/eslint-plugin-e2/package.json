@@ -1,9 +1,46 @@
 {
   "name": "eslint-plugin-e2",
-  "version": "0.0.0",
+  "version": "3.0.0",
+  "description": "ESLint rules for e2: catch effects that are built and never run",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "eslint-plugin",
+    "e2",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "Nikita Mostovoy <xnimor@ya.ru>",
+  "homepage": "https://xnimorz.github.io/e2/effects.html#footgun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xnimorz/e2.git",
+    "directory": "packages/eslint-plugin-e2"
+  },
+  "bugs": "https://github.com/xnimorz/e2/issues",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "prepack": "bun ../../scripts/build.ts eslint-plugin-e2"
+  },
+  "dependencies": {
+    "@typescript-eslint/utils": "^8.69.0"
+  },
   "peerDependencies": {
-    "eslint": ">=9"
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": ">=9",
+    "typescript": ">=5.5"
   }
 }

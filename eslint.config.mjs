@@ -3,9 +3,9 @@ import e2 from './packages/eslint-plugin-e2/src/index.ts'
 
 export default [
   {
-    files: ['src/**/*.ts', 'packages/**/*.ts', 'examples/**/*.ts'],
+    files: ['src/**/*.ts', 'packages/**/*.ts', 'examples/**/*.ts', 'scripts/**/*.ts'],
     // Fixtures are meant to fail; the spike is types-only.
-    ignores: ['src/tests/diagnostics/**', 'spike/**', 'dist/**'],
+    ignores: ['src/tests/diagnostics/**', 'spike/**', 'dist/**', '**/lib/**'],
     languageOptions: {
       parser,
       parserOptions: {

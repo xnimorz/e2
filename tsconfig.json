@@ -1,5 +1,5 @@
 {
-  "exclude": ["src/tests/diagnostics", "prototype", "dist", "out", "lib"],
+  "exclude": ["src/tests/diagnostics", "prototype", "dist", "out", "lib", "packages/*/lib"],
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext", "dom"],

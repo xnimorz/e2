@@ -145,6 +145,31 @@ describe('fibers and structured concurrency', () => {
     expect(cleaned).toEqual(['released'])
   })
 
+  test('acquire awaits any promise, not only instances of the global Promise', async () => {
+    // Bun's node:fs/promises, an iframe's fetch and a VM context all return
+    // promises that fail `instanceof Promise`. A thenable stands in for them.
+    const foreign = <Value>(value: Value): PromiseLike<Value> => ({
+      then: (onFulfilled, onRejected) => Promise.resolve(value).then(onFulfilled, onRejected),
+    })
+    const events: string[] = []
+    const effect = scoped(
+      gen(function* () {
+        const resource = yield* acquire(
+          () => foreign('opened') as unknown as Promise<string>,
+          () =>
+            foreign(undefined).then(() => {
+              events.push('closed')
+            }) as Promise<void>
+        )
+        events.push(`using ${resource}`)
+        return resource
+      })
+    )
+    expect(value(await run(effect, []))).toBe('opened')
+    // The close was awaited before the scope settled, not fired and forgotten.
+    expect(events).toEqual(['using opened', 'closed'])
+  })
+
   test('joinExit reports interruption as a value', async () => {
     const effect = gen(function* () {
       const child = yield* fork(sleep(1000))

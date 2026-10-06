@@ -1,0 +1,19 @@
+{
+  // Emits the published plugin into lib/. See the root tsconfig.build.json.
+  "extends": "../../tsconfig.json",
+  "include": ["src"],
+  "exclude": [],
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "allowJs": false,
+    "rootDir": "src",
+    "outDir": "lib",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "target": "ES2022",
+    "paths": {}
+  }
+}

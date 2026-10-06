@@ -13,9 +13,7 @@ import type * as ts from 'typescript'
  * for, and it is cheap precisely because the brand makes detection exact.
  */
 
-const createRule = ESLintUtils.RuleCreator(
-  (name) => `https://github.com/xnim/e2/blob/main/packages/eslint-plugin-e2/${name}.md`
-)
+const createRule = ESLintUtils.RuleCreator(() => 'https://xnimorz.github.io/e2/effects.html#footgun')
 
 /**
  * The brand appears in the type as a computed property whose escaped name is

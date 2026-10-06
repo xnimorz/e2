@@ -466,6 +466,16 @@ export const addFinalizer = (finalizer: Finalizer): Fx<void, never, ScopeName> =
  * it into the error channel. Release failures are always swallowed: a scope
  * that stops closing halfway through is worse than a lost cleanup error.
  */
+/**
+ * Whether `value` is a promise. Not `instanceof Promise`: that is false for a
+ * promise from another realm (an iframe, a worker's transfer, a VM context)
+ * and for runtimes' own subclasses - Bun's `node:fs/promises` returns one.
+ */
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  (typeof value === 'object' || typeof value === 'function') &&
+  value !== null &&
+  typeof (value as { then?: unknown }).then === 'function'
+
 export function acquire<Value>(
   open: (signal: AbortSignal) => Value | Promise<Value>,
   close: (resource: Value, exit: Exit<unknown, unknown>) => void | Promise<void>
@@ -488,7 +498,7 @@ export function acquire<Value, Error>(
       new Async<Value, Error>((resume, signal) => {
         try {
           const opened = open(signal)
-          if (opened instanceof Promise) {
+          if (isThenable(opened)) {
             opened.then(
               (resource) => resume(new Ok(resource) as never),
               (reason) => resume(failed(reason) as never)
@@ -507,7 +517,7 @@ export function acquire<Value, Error>(
             new Async<void, never>((resume) => {
               try {
                 const closed = close(resource, exit)
-                if (closed instanceof Promise) {
+                if (isThenable(closed)) {
                   closed.then(
                     () => resume(new Ok(undefined)),
                     () => resume(new Ok(undefined))

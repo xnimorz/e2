@@ -39,15 +39,15 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src packages examples",
+    "lint": "eslint src packages examples scripts",
     "check": "bun run typecheck && bun run lint && bun test",
     "build:browser": "bun build src/index.ts --target=browser --outdir dist",
     "smoke:browser": "bun build src/tests/browser/entry.ts --target=browser --format=iife --outfile dist/e2-smoke.js && echo \"open dist/smoke.html in a browser\"",
     "site": "bun scripts/build-site.ts",
     "site:serve": "bun scripts/build-site.ts --serve",
-    "build:lib": "bun scripts/build-lib.ts",
-    "prepack": "bun scripts/build-lib.ts",
-    "release": "bun scripts/release.ts"
+    "prepack": "bun scripts/build.ts e2",
+    "release": "bun scripts/release.ts",
+    "build": "bun scripts/build.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

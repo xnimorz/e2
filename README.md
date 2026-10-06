@@ -163,7 +163,7 @@ An `Fx` is a description, so building one and not running it does nothing, silen
 | `await someFx` | **lint** |
 | `[...someFx]`, `Promise.all([someFx])` | **lint** |
 
-The last four are out of the type system's reach. [`eslint-plugin-e2`](packages/eslint-plugin-e2) covers them with `no-floating-fx`, which is exact because the brand is: it recognises an effect without resolving the e2 module. It deliberately does **not** flag a discarded `Result`, which is eager — by the time you hold one, the work has happened.
+The last four are out of the type system's reach. [`eslint-plugin-e2`](packages/eslint-plugin-e2) (`npm install --save-dev eslint-plugin-e2`) covers them with `no-floating-fx`, which is exact because the brand is: it recognises an effect without resolving the e2 module. It deliberately does **not** flag a discarded `Result`, which is eager — by the time you hold one, the work has happened.
 
 ## Limitations
 
@@ -197,8 +197,22 @@ bun install
 bun run check          # typecheck + lint + tests
 bun run smoke:browser  # build dist/e2-smoke.js, then open dist/smoke.html
 bun run site:serve     # build the documentation and playground into out/site, and serve them
+bun run build          # compile e2 and eslint-plugin-e2 into their lib/ directories
 ```
 
 The site is published to GitHub Pages on every push to `master`.
+
+### Releasing
+
+`e2` and `eslint-plugin-e2` are released together, at one version. Set the same `version` in both `package.json` files, commit and push, then:
+
+```bash
+bun run release --dry-run   # check, build, pack, and verify the tarballs in a scratch project
+bun run release             # the same, then push tag vX.Y.Z; the Release workflow publishes to npm
+```
+
+`bun run release --publish` publishes from your machine instead, which a package's very first release needs if npm trusted publishing is not set up yet.
+
+The release script is itself an e2 program: git, npm, the shell and the terminal are services ([`scripts/release/contracts.ts`](scripts/release/contracts.ts)), each mode is a provider list ([`scripts/release.ts`](scripts/release.ts)), and [`scripts/release/release.spec.ts`](scripts/release/release.spec.ts) runs the real release logic against doubles. Ctrl+C stops running commands and removes the scratch project before exiting.
 
 TypeScript 5.5 or later. The browser bundle is verified in CI by executing it with every Node global shadowed out of scope.
