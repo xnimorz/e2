@@ -27,13 +27,13 @@
   <div class="onpage">
     <div class="lbl">On this page</div>
     <ol>
-      <li><a href="#service">Define and implement a service</a></li>
-      <li><a href="#compose">Compose an application</a></li>
-      <li><a href="#test">Test with doubles</a></li>
-      <li><a href="#lazy">Open a database lazily</a></li>
-      <li><a href="#batch">Coalesce writes</a></li>
-      <li><a href="#worker">Put a service in a worker</a></li>
-      <li><a href="#extend">Extend the pipeline</a></li>
+      <li><a href="#first-service">1. Your first service</a></li>
+      <li><a href="#wire">2. Wire an application</a></li>
+      <li><a href="#failures">3. Handle failure</a></li>
+      <li><a href="#testing">4. Test it</a></li>
+      <li><a href="#lazy">5. Open things lazily</a></li>
+      <li><a href="#batching">6. Coalesce writes</a></li>
+      <li><a href="#cancellation">7. Time out, retry, cancel</a></li>
     </ol>
   </div>
   <div class="side-foot"><a href="https://github.com/xnimorz/e2">github.com/xnimorz/e2</a></div>
@@ -42,254 +42,258 @@
 <main>
   <header class="page">
     <div class="eyebrow">e2 · guides</div>
-    <h1>Seven things you will actually do, in order</h1>
-    <p class="lede">Each guide is a sequence of steps with the code you would write. The examples follow one application throughout, an end-to-end-encrypted messaging client split across a main thread and a worker, so the services they mention (<code>Crypto</code>, <code>LocalStore</code>, <code>Mps</code>, <code>Send</code>, <code>Receive</code>) fit together. The <a href="playground.html">playground</a> has smaller versions you can run.</p>
+    <h1>Build a small app, one idea at a time</h1>
+    <p class="lede">Seven short guides grow one notes app. Each starts from a problem you have probably met, adds one idea, and ends with code you can run. Every code block on this page is cut from a playground example that is type-checked and tested along with the library, so what you read is what runs.</p>
   </header>
 
+  <ol class="guide-index">
+    <li><a href="#first-service"><span class="n">1</span><span class="t">Your first service</span><span class="d">Describe it, implement it, use it, run it.</span></a></li>
+    <li><a href="#wire"><span class="n">2</span><span class="t">Wire an application</span><span class="d">Services that need services, opened and closed for you.</span></a></li>
+    <li><a href="#failures"><span class="n">3</span><span class="t">Handle failure</span><span class="d">Expected errors in the type, bugs kept apart.</span></a></li>
+    <li><a href="#testing"><span class="n">4</span><span class="t">Test it</span><span class="d">Swap implementations instead of mocking modules.</span></a></li>
+    <li><a href="#lazy"><span class="n">5</span><span class="t">Open things lazily</span><span class="d">Once, on first use, shared by everyone waiting.</span></a></li>
+    <li><a href="#batching"><span class="n">6</span><span class="t">Coalesce writes</span><span class="d">Callers add one note; the disk sees a hundred.</span></a></li>
+    <li><a href="#cancellation"><span class="n">7</span><span class="t">Time out, retry, cancel</span><span class="d">Work that stops when nobody wants it.</span></a></li>
+  </ol>
+
   <!-- ============================================================ -->
-  <section id="service">
-    <div class="head">
-      <div class="eyebrow">Guide 1</div>
-      <h2>Define and implement a service</h2>
+  <section id="first-service" class="guide">
+    <div class="guide-head">
+      <div class="head">
+        <div class="eyebrow">Guide 1</div>
+        <h2>Your first service</h2>
+      </div>
+      <a class="try" href="playground.html#guide-first-service">Run this guide ▸</a>
     </div>
+    <p class="problem">A service is anything your code needs but should not build itself: storage, a clock, an HTTP client. You describe it once, ask for it where you need it, and decide what fills it at the edge of the program.</p>
     <ol class="steps">
-      <li><div><b>Write the contract as an interface, and the key with the same name.</b>
-<pre class="code"><code><span class="k">export interface</span> <span class="t">Crypto</span> {
-  <span class="k">readonly</span> seal: (inbound: <span class="t">Inbound</span>) =&gt; <span class="t">Fx</span>&lt;<span class="t">Envelope</span>&gt;
-  <span class="k">readonly</span> open: (envelope: <span class="t">Envelope</span>) =&gt; <span class="t">Fx</span>&lt;<span class="t">Inbound</span>, <span class="t">CryptoError</span>&gt;
-}
-<span class="k">export const</span> Crypto = service&lt;<span class="t">Crypto</span>&gt;()(<span class="s">'Crypto'</span>)</code></pre>
+      <li><div><b>Describe what it does.</b>
+        <p>An interface says what the service can do. <code>service&lt;Notes&gt;()('Notes')</code> makes the key the program asks for. They share a name on purpose: the type <code>Notes</code> is the contract, the value <code>Notes</code> is the key.</p>
+        <pre class="code" data-snippet="guide-first-service#contract"></pre>
       </div></li>
-      <li><div><b>Implement it with <code>make</code>. Yield what you need; that is the dependency declaration.</b>
-<pre class="code"><code><span class="k">export const</span> CryptoLive = Crypto.make(<span class="k">function*</span> () {
-  <span class="k">const</span> config = <span class="y">yield*</span> Config
-  <span class="k">const</span> cipher = (text: <span class="t">string</span>, shift: <span class="t">number</span>) =&gt; <span class="c">/* … */</span>
-  <span class="k">return</span> {
-    seal: (inbound) =&gt; sync(() =&gt; ({ ...inbound, ciphertext: cipher(JSON.stringify(inbound.payload), <span class="n">1</span>) })),
-    open: (envelope) =&gt; gen(<span class="k">function*</span> () {
-      <span class="k">if</span> (envelope.ciphertext.startsWith(<span class="s">'!'</span>)) <span class="k">return</span> <span class="y">yield*</span> err(<span class="k">new</span> <span class="t">CryptoError</span>(envelope.id))
-      <span class="k">return</span> { ...envelope, payload: JSON.parse(cipher(envelope.ciphertext, -<span class="n">1</span>)) }
-    }),
-  }
-})
-<span class="c">// Provider&lt;'Crypto', 'Config', never&gt;</span></code></pre>
+      <li><div><b>Implement it.</b>
+        <p><code>Notes.make</code> takes a generator that returns the implementation. Parameter types come from the contract, so <code>text</code> needs no annotation.</p>
+        <pre class="code" data-snippet="guide-first-service#implementation"></pre>
       </div></li>
-      <li><div><b>Check the parameter types came from the contract.</b><p>Hover <code>inbound</code> in <code>seal</code>: it is <code>Inbound</code> with no annotation, because the contract bounds the returned object. A method that reaches for a service the contract does not mention is rejected here, not discovered by a caller.</p></div></li>
-      <li><div><b>Use it from anywhere, without threading it through.</b>
-<pre class="code"><code><span class="k">const</span> absorb = (envelope: <span class="t">Envelope</span>) =&gt; gen(<span class="k">function*</span> () {
-  <span class="k">const</span> crypto = <span class="y">yield*</span> Crypto
-  <span class="k">const</span> inbound = <span class="y">yield*</span> crypto.open(envelope)
-  <span class="k">return</span> <span class="y">yield*</span> ingest(inbound)
-})
-<span class="c">// Fx&lt;readonly Message[], CryptoError | DomainError, 'Crypto' | …&gt;</span></code></pre>
+      <li><div><b>Use it.</b>
+        <p>Inside <code>fx(function* …)</code>, <code>yield* Notes</code> gives you the service, and <code>yield*</code> on anything it returns gives you the result. Nobody writes the type on the last line; e2 works out that this needs <code>'Notes'</code>.</p>
+        <pre class="code" data-snippet="guide-first-service#program"></pre>
+      </div></li>
+      <li><div><b>Run it with an implementation.</b>
+        <pre class="code" data-snippet="guide-first-service#run"></pre>
+      </div></li>
+      <li><div><b>Forget the implementation, and see what happens.</b>
+        <p>Change the list to <code>[]</code>. The program no longer compiles, and the message says what is missing:</p>
+        <div class="diagnostic">
+          <header><span class="code">TS2345</span><span>run(remember('buy milk'), [])</span></header>
+          <pre>Type 'Fx&lt;readonly Note[], never, "Notes"&gt;' is not assignable to type <span class="hi">'"e2: missing service Notes"'</span>.</pre>
+        </div>
       </div></li>
     </ol>
+    <div class="callout"><span class="t">What you got</span>A dependency the compiler knows about. Replace <code>NotesInMemory</code> with a database-backed implementation and nothing that uses <code>Notes</code> changes.</div>
   </section>
 
   <!-- ============================================================ -->
-  <section id="compose">
-    <div class="head">
-      <div class="eyebrow">Guide 2</div>
-      <h2>Compose an application at one root</h2>
+  <section id="wire" class="guide">
+    <div class="guide-head">
+      <div class="head">
+        <div class="eyebrow">Guide 2</div>
+        <h2>Wire an application</h2>
+      </div>
+      <a class="try" href="playground.html#guide-wire-an-app">Run this guide ▸</a>
     </div>
+    <p class="problem">Real services depend on each other. The notes store needs a clock and a logger; the logger needs configuration. Usually that means building things in the right order and remembering to close them. Here each implementation asks for what it needs, and the runtime works out the rest.</p>
     <ol class="steps">
-      <li><div><b>List every provider once. Order does not matter.</b>
-<pre class="code"><code><span class="k">const</span> rt = <span class="k">await</span> runtime([
-  Config,                      <span class="c">// a defaulted service goes in as itself</span>
-  NetworkLive,
-  LocalStoreLive,
-  MediaStoreLive,
-  ServerFetchLive,
-  CoreValidationLive, MediaStageLive, SearchIndexLive, SearchStageLive,
-  PreStagesLive, PostStagesLive, CategorisersLive, HandlersLive,
-  MpsLive, SendLive, ReceiveLive,
-])</code></pre>
+      <li><div><b>Add the contracts.</b>
+        <p>Same shape as before: an interface and a key for each.</p>
+        <pre class="code" data-snippet="guide-wire-an-app#contracts"></pre>
       </div></li>
-      <li><div><b>Let the compiler close the list.</b><p>Remove <code>SearchIndexLive</code> and the next line fails with <code>Property 'run' does not exist on type '"e2: missing service SearchIndex"'</code>. The check folds in every provider's own needs, so a service nothing in your program mentions directly is still caught.</p></div></li>
-      <li><div><b>Decide the startup policy here, and nowhere else.</b>
-<pre class="code"><code>  lazy(CryptoLive),   <span class="c">// ratchet set up on the first seal or open</span>
-  lazy(MpsLive),      <span class="c">// built by the first read, send or receive - whichever comes first</span>
-  lazy(SendLive),     <span class="c">// nothing until the user sends</span>
-  ReceiveLive,        <span class="c">// a subscription can arrive at any moment</span></code></pre>
-      <p>A lazy provider's construction failure reaches its first user as a <code>ProviderFailed</code> defect instead of failing startup. Use it for services genuinely optional at boot.</p></div></li>
-      <li><div><b>Look at what actually happened.</b>
-<pre class="code"><code>rt.graph()
-<span class="c">// {</span>
-<span class="c">//   Mps:  { status: 'done',  lazy: true,  demanded: ['LocalStore', 'ServerFetch', 'Crypto', 'MPS/PreStages', …] },</span>
-<span class="c">//   Send: { status: 'empty', lazy: true,  demanded: [] },   // nobody has sent yet</span>
-<span class="c">//   …</span>
-<span class="c">// }</span></code></pre>
+      <li><div><b>Implement the simple ones.</b>
+        <p><code>of</code> takes a value you already have. <code>make</code> is for an implementation that needs other services: it <code>yield*</code>s them. The comment under <code>LoggerLive</code> is its inferred type: it provides <code>'Logger'</code> and needs <code>'Config'</code>. Nobody wrote that list down; it comes from the body.</p>
+        <pre class="code" data-snippet="guide-wire-an-app#leaves"></pre>
       </div></li>
-      <li><div><b>Close it in reverse.</b><p><code>await rt.close()</code>, or <code>await using rt = await runtime(…)</code>. Every <code>acquire</code> releases most-recent first, and every <code>batch</code> flushes what is pending.</p></div></li>
+      <li><div><b>Open resources with <code>acquire</code>.</b>
+        <p><code>acquire</code> pairs opening something with closing it. The close runs when the application stops, newest first, whether it stops cleanly or not.</p>
+        <pre class="code" data-snippet="guide-wire-an-app#notes"></pre>
+      </div></li>
+      <li><div><b>List everything once, in any order.</b>
+        <p><code>runtime</code> builds each service the first time something needs it, following the <code>yield*</code>s, and keeps them for as many runs as you like. <code>app.graph()</code> shows what was built and what each one asked for.</p>
+        <pre class="code" data-snippet="guide-wire-an-app#runtime"></pre>
+        <p>Leave <code>ClockLive</code> out and <code>app.run</code> stops compiling:</p>
+        <div class="diagnostic">
+          <header><span class="code">TS2339</span><span>runtime([NotesLive, LoggerLive, ConfigLive])</span></header>
+          <pre>Property 'run' does not exist on type <span class="hi">'"e2: missing service Clock"'</span>.</pre>
+        </div>
+      </div></li>
     </ol>
+    <div class="callout"><span class="t">What you got</span>No container configuration, no construction order, no forgotten <code>close()</code>. Adding a dependency to a service is one <code>yield*</code> in its body; the compiler then tells you whether the list still covers it.</div>
   </section>
 
   <!-- ============================================================ -->
-  <section id="test">
-    <div class="head">
-      <div class="eyebrow">Guide 3</div>
-      <h2>Test with doubles</h2>
+  <section id="failures" class="guide">
+    <div class="guide-head">
+      <div class="head">
+        <div class="eyebrow">Guide 3</div>
+        <h2>Handle failure</h2>
+      </div>
+      <a class="try" href="playground.html#guide-failures">Run this guide ▸</a>
     </div>
+    <p class="problem">Things go wrong in two different ways. Some failures are outcomes you expect: the note does not exist, the text is empty. Others are bugs. e2 keeps them apart: expected failures are part of the type, so the compiler tracks them; bugs are not, so they cannot hide among them.</p>
     <ol class="steps">
-      <li><div><b>A double is a provider for the same key.</b>
-<pre class="code"><code><span class="k">const</span> offline = Network.of({
-  send: () =&gt; fail(<span class="k">new</span> <span class="t">NetworkError</span>(<span class="s">'offline'</span>)),
-  inbound: () =&gt; async_(() =&gt; <span class="k">undefined</span>),
-  simulateIncoming: () =&gt; ok(<span class="k">undefined</span>),
-  sentCount: ok(<span class="n">0</span>),
-})
-
-<span class="k">const</span> result = <span class="k">await</span> run(program, [Config, offline, LocalStoreLive, CryptoLive, MpsLive, SendLive, <span class="c">/* … */</span>])</code></pre>
+      <li><div><b>Name the failures.</b>
+        <p>A class with a <code>_tag</code>. <code>TaggedError</code> extends <code>Error</code>, so stack traces and <code>instanceof</code> work as usual.</p>
+        <pre class="code" data-snippet="guide-failures#errors"></pre>
       </div></li>
-      <li><div><b>Prefer <code>make</code> for a stateful double.</b><p><code>Store.of(new Map())</code> is one map shared by every runtime that lists it. <code>Store.make(function* () { const rows = new Map(); return { … } })</code> is a fresh map per build.</p></div></li>
-      <li><div><b>Assert on behaviour through the services.</b><p>A test can read <code>LocalStore.count</code>, <code>LocalStore.writes</code> and <code>ServerFetch.fetchCount</code> to assert "a failed send leaves no phantom row" and "fifty envelopes are one write". Contracts that expose their counters are testable without reaching inside, and across a worker too.</p></div></li>
-      <li><div><b>Use <code>runSync</code> when nothing suspends.</b><p>Synchronous providers and a synchronous program run in a plain function call. Reaching an asynchronous operation produces <code>Die(AsyncBoundary)</code>, never a hang.</p></div></li>
+      <li><div><b>Say which methods can fail, and how.</b>
+        <p>The second type parameter of <code>Fx</code> lists what can go wrong.</p>
+        <pre class="code" data-snippet="guide-failures#contract"></pre>
+      </div></li>
+      <li><div><b>Write checks as plain functions.</b>
+        <p><code>ok</code> and <code>err</code> build a <code>Result</code>. No effect, no service: just a function you can call anywhere.</p>
+        <pre class="code" data-snippet="guide-failures#validate"></pre>
+      </div></li>
+      <li><div><b>Let <code>yield*</code> stop at the first failure.</b>
+        <p>Yielding a <code>Result</code> continues with its value, or ends the body with its error. It is the <code>?</code> operator from Rust, in TypeScript.</p>
+        <pre class="code" data-snippet="guide-failures#implementation"></pre>
+      </div></li>
+      <li><div><b>Watch the errors add up by themselves.</b>
+        <p><code>duplicate</code> calls a method that can fail with <code>NoteNotFound</code> and one that can fail with <code>EmptyNote</code>, so its type says both.</p>
+        <pre class="code" data-snippet="guide-failures#program"></pre>
+        <pre class="code" data-snippet="guide-failures#outcomes"></pre>
+      </div></li>
+      <li><div><b>Recover from the ones you choose.</b>
+        <p><code>catchAll</code> sees expected failures only. Return <code>ok</code> to recover, or <code>err</code> to pass the failure on. The type follows: <code>NoteNotFound</code> is gone, <code>EmptyNote</code> remains.</p>
+        <pre class="code" data-snippet="guide-failures#recover"></pre>
+      </div></li>
+      <li><div><b>Leave bugs as bugs.</b>
+        <pre class="code" data-snippet="guide-failures#defects"></pre>
+      </div></li>
     </ol>
+    <div class="callout"><span class="t">What you got</span>Every expected failure is in a signature, so a new one is a compile error at every place that has to decide about it. Bugs reject loudly instead of being caught by a handler written for something else.</div>
   </section>
 
   <!-- ============================================================ -->
-  <section id="lazy">
-    <div class="head">
-      <div class="eyebrow">Guide 4</div>
-      <h2>Open a database lazily, once</h2>
+  <section id="testing" class="guide">
+    <div class="guide-head">
+      <div class="head">
+        <div class="eyebrow">Guide 4</div>
+        <h2>Test it</h2>
+      </div>
+      <a class="try" href="playground.html#guide-testing">Run this guide ▸</a>
     </div>
+    <p class="problem">Code that imports its dependencies needs module mocks to test. Code that asks for services needs nothing special: run it with different implementations.</p>
     <ol class="steps">
-      <li><div><b>Wrap the acquisition in <code>memo</code>, inside the provider that owns it.</b>
-<pre class="code"><code><span class="k">const</span> db = <span class="y">yield*</span> memo(
-  acquire(() =&gt; openMessages(<span class="s">'messages-'</span> + config.userId), (store) =&gt; store.close(), (reason) =&gt; <span class="k">new</span> <span class="t">IdbError</span>(reason))
-)
-<span class="c">// db: Fx&lt;IdbStore, IdbError&gt; — no dependencies, not opened yet</span></code></pre>
+      <li><div><b>Start from the code you want to test.</b>
+        <p>It reads the clock and the notes. It has no idea it is under test.</p>
+        <pre class="code" data-snippet="guide-testing#program"></pre>
       </div></li>
-      <li><div><b>Make every read and write yield the handle.</b>
-<pre class="code"><code>get: (id) =&gt; gen(<span class="k">function*</span> () {
-  <span class="k">const</span> store = <span class="y">yield*</span> db
-  <span class="k">return</span> <span class="y">yield*</span> fromPromise(() =&gt; store.get(id), (reason) =&gt; <span class="k">new</span> <span class="t">IdbError</span>(reason))
-}),</code></pre>
-      <p>The first read opens the store; concurrent first reads share the one open; later reads find it open. The provider itself constructs synchronously and cannot fail; the open's failure belongs to the read that triggered it, where the contract already says <code>IdbError</code>.</p></div></li>
-      <li><div><b>Want it warm? Say so at the memo, not at the root.</b><p><code>memo(acquire(…), { eager: true })</code> starts the open in the background at construction. Reads arriving before it settles wait; reads after do not. Nothing else changes.</p></div></li>
-      <li><div><b>Let teardown close it.</b><p>The <code>acquire</code> registered on the runtime scope when the memo was created, not on the request that happened to read first, so <code>rt.close()</code> closes it in reverse order with everything else.</p></div></li>
+      <li><div><b>Write doubles as ordinary providers.</b>
+        <p>A fixed clock is <code>Clock.of(…)</code> with a fixed date. A store with known contents is <code>Notes.of(…)</code>. Small functions make them reusable.</p>
+        <pre class="code" data-snippet="guide-testing#doubles"></pre>
+      </div></li>
+      <li><div><b>Run the same program against different lists.</b>
+        <pre class="code" data-snippet="guide-testing#tests"></pre>
+      </div></li>
+      <li><div><b>Replace only what you need to.</b>
+        <p>Use the real store and a fake clock. Every other service stays real.</p>
+        <pre class="code" data-snippet="guide-testing#real"></pre>
+      </div></li>
     </ol>
+    <div class="callout"><span class="t">What you got</span>No mocking library and no module patching. A list that misses a double is a compile error like any other. Prefer <code>make</code> for doubles with state, so each run gets a fresh one; and if nothing in a test waits, <code>runSync</code> runs it without <code>await</code>.</div>
   </section>
 
   <!-- ============================================================ -->
-  <section id="batch">
-    <div class="head">
-      <div class="eyebrow">Guide 5</div>
-      <h2>Coalesce writes without changing the API</h2>
+  <section id="lazy" class="guide">
+    <div class="guide-head">
+      <div class="head">
+        <div class="eyebrow">Guide 5</div>
+        <h2>Open things lazily</h2>
+      </div>
+      <a class="try" href="playground.html#guide-lazy">Run this guide ▸</a>
     </div>
+    <p class="problem">Some things are slow to open and not always needed: a database, a search index, a whole feature. You want each opened once, on first use, shared by everyone who asks while it opens, and closed at shutdown. And you do not want the code that uses it to know any of that.</p>
     <ol class="steps">
-      <li><div><b>Create a batcher where the writes happen.</b>
-<pre class="code"><code><span class="k">const</span> writer = <span class="y">yield*</span> batch(
-  (messages: <span class="k">readonly</span> <span class="t">Message</span>[]) =&gt; sync(() =&gt; { writes += <span class="n">1</span>; <span class="k">return</span> messages }),   <span class="c">// one transaction</span>
-  { maxSize: <span class="n">500</span> }
-)</code></pre>
+      <li><div><b>Wrap the expensive part in <code>memo</code>.</b>
+        <p><code>memo</code> does not run anything. It returns a handle; the first <code>yield*</code> of the handle opens the database, and everything after that reuses it.</p>
+        <pre class="code" data-snippet="guide-lazy#memo"></pre>
       </div></li>
-      <li><div><b>Make the row visible immediately, and enqueue the write.</b>
-<pre class="code"><code>put: (message) =&gt; gen(<span class="k">function*</span> () {
-  <span class="k">const</span> rows = <span class="y">yield*</span> db
-  rows.set(key(message), message)
-  <span class="y">yield*</span> writer.enqueue(message)
-  <span class="k">return</span> message
-}),</code></pre>
-      <p>Visible-before-durable is what lets a reaction find a message that arrived in the same batch. Keep the buffer in the store, where the readers are.</p></div></li>
-      <li><div><b>Expose <code>flush</code> and a counter, and let the scope flush at close.</b><p><code>flush: writer.flush</code> for callers that need durability now. The batcher's own finalizer flushes at shutdown. A test asserts <code>writes === 1</code> after fifty puts in one synchronous run.</p></div></li>
-      <li><div><b>Use <code>add</code> when the caller needs its result.</b><p><code>add(item)</code> waits for the batch and receives its own element of the result, by position, which is the DataLoader shape. It parks, so it needs an asynchronous entry point.</p></div></li>
+      <li><div><b>Keep whole services out of startup with <code>lazy()</code>.</b>
+        <p>Services are built at startup by default, so a broken one fails fast. <code>lazy(…)</code> in the list opts one out: it is built the first time something asks for it.</p>
+        <pre class="code" data-snippet="guide-lazy#lazy"></pre>
+      </div></li>
+      <li><div><b>Use them as if they were ready.</b>
+        <p>Three reads arrive together; the database opens once and all three get it. The export service is built only when the export runs.</p>
+        <pre class="code" data-snippet="guide-lazy#use"></pre>
+      </div></li>
     </ol>
+    <div class="callout"><span class="t">What you got</span>Startup cost moves to first use without a single <code>if (!opened)</code>. If the open fails, the readers waiting for it get the failure and the next read tries again.</div>
   </section>
 
   <!-- ============================================================ -->
-  <section id="worker">
-    <div class="head">
-      <div class="eyebrow">Guide 6</div>
-      <h2>Put a service in a worker</h2>
+  <section id="batching" class="guide">
+    <div class="guide-head">
+      <div class="head">
+        <div class="eyebrow">Guide 6</div>
+        <h2>Coalesce writes</h2>
+      </div>
+      <a class="try" href="playground.html#guide-batching">Run this guide ▸</a>
     </div>
-    <div class="prose">
-      <p>The steps follow <a href="https://github.com/xnimorz/e2/tree/master/examples/worker"><code>examples/worker</code></a>, which moves a CPU-bound <code>Heavy</code> service off the main thread. The <a href="workers.html">Workers</a> page explains why each piece is shaped the way it is.</p>
-    </div>
+    <p class="problem">Saving notes one at a time is easy to write and slow to run. Batching usually means changing every caller to collect notes first. Here the store batches its own writes, and callers keep adding one note at a time.</p>
     <ol class="steps">
-      <li><div><b>Make sure every member of the contract can cross.</b><p>An <code>Fx</code> value, a method of cloneable arguments returning an <code>Fx</code>, or a trailing-callback method returning <code>Fx&lt;never, E&gt;</code>. A member that returns a plain value, or takes a callback anywhere but last, has to change shape first.</p></div></li>
-      <li><div><b>In the worker, answer calls by method name.</b><p>Each call gets its own <code>AbortController</code>; a <code>cancel</code> aborts it. Reply <code>ok</code> with the value, <code>err</code> with plain data for an expected failure, <code>defect</code> for anything else. Slice long loops so a <code>cancel</code> can be delivered.</p>
-<pre class="code"><code><span class="k">const</span> handlers = {
-  digest: ([input, rounds], signal) =&gt; digest(input, rounds, signal),
-  countPrimes: ([limit], signal) =&gt; countPrimes(limit, signal),
-}</code></pre>
+      <li><div><b>Give the store a batch.</b>
+        <p><code>batch</code> takes an operation over many items and hands back <code>enqueue</code> for one item. Items added in the same moment, or until <code>maxSize</code>, go to one call.</p>
+        <pre class="code" data-snippet="guide-batching#batch"></pre>
       </div></li>
-      <li><div><b>On the main thread, write a provider that forwards.</b>
-<pre class="code"><code><span class="k">export const</span> HeavyOnWorker = Heavy.make(<span class="k">function*</span> () {
-  <span class="c">// acquire: the worker is terminated when the runtime closes</span>
-  <span class="k">const</span> link = <span class="y">yield*</span> openLink(<span class="k">new</span> <span class="t">URL</span>(<span class="s">'./heavy.worker.ts'</span>, <span class="k">import</span>.meta.url))
-  <span class="k">return</span> {
-    digest: (input, rounds) =&gt; call(link, <span class="s">'digest'</span>, [input, rounds], decodeHeavyError),
-    countPrimes: (limit) =&gt; call(link, <span class="s">'countPrimes'</span>, [limit], decodeHeavyError),
-  }
-})</code></pre>
-      <p><code>call</code> is an <code>async_</code> whose cleanup posts <code>cancel</code>, so interrupting the caller stops the work on the other thread.</p></div></li>
-      <li><div><b>Put it in the list. Change nothing else.</b>
-<pre class="code"><code><span class="k">await using</span> rt = <span class="k">await</span> runtime([HeavyOnWorker])        <span class="c">// was [HeavyOnMainThread]</span>
-<span class="k">await</span> rt.run(fingerprint(<span class="s">'hello'</span>, <span class="n">2_000</span>))           <span class="c">// the program does `yield* Heavy`, as before</span></code></pre>
+      <li><div><b>Call it one note at a time.</b>
+        <pre class="code" data-snippet="guide-batching#import"></pre>
       </div></li>
-      <li><div><b>Keep the error decoder honest.</b><p>Structured clone drops prototypes. Every error class that can cross needs a case in <code>decodeHeavyError</code>, or the caller receives an object that fails <code>instanceof</code>.</p></div></li>
-      <li><div><b>Test that both sides agree.</b><p>Run the same program against <code>[HeavyOnMainThread]</code> and <code>[HeavyOnWorker]</code> and compare, for failures as well as for values. Swapping providers is only transparent if the failure paths match.</p></div></li>
     </ol>
+    <div class="callout"><span class="t">What you got</span>250 calls, three writes, and nothing lost at the end: whatever is still queued is written when the run's scope closes. When a caller needs its own result back, the DataLoader pattern, use <code>add</code> instead of <code>enqueue</code>.</div>
   </section>
 
   <!-- ============================================================ -->
-  <section id="extend">
-    <div class="head">
-      <div class="eyebrow">Guide 7</div>
-      <h2>Extend the message pipeline without touching it</h2>
+  <section id="cancellation" class="guide">
+    <div class="guide-head">
+      <div class="head">
+        <div class="eyebrow">Guide 7</div>
+        <h2>Time out, retry, cancel</h2>
+      </div>
+      <a class="try" href="playground.html#guide-cancellation">Run this guide ▸</a>
     </div>
-    <div class="prose">
-      <p>MPS owns the <em>shape</em> of processing and nothing else. It depends on four extension points, services nobody gives a default to, and the composition root fills them.</p>
-    </div>
-    <figure class="svg">
-      <svg viewBox="0 0 960 200" role="img" aria-label="The MPS pipeline: an inbound payload is categorised into a directive, run through pre-stages, applied by a handler, its saved messages run through post-stages and persisted; follow-up directives loop back">
-        <defs><marker id="p1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
-        <rect x="16" y="60" width="120" height="44" rx="6" class="node"/><text x="76" y="87" class="nodelbl">Inbound</text>
-        <line x1="136" y1="82" x2="166" y2="82" class="edge" marker-end="url(#p1)"/>
-        <rect x="168" y="60" width="140" height="44" rx="6" class="node acc"/><text x="238" y="80" class="nodelbl">Categorisers</text><text x="238" y="96" class="sub" text-anchor="middle">by payload kind</text>
-        <line x1="308" y1="82" x2="338" y2="82" class="edge" marker-end="url(#p1)"/>
-        <rect x="340" y="60" width="130" height="44" rx="6" class="node acc"/><text x="405" y="80" class="nodelbl">PreStages</text><text x="405" y="96" class="sub" text-anchor="middle">validation</text>
-        <line x1="470" y1="82" x2="500" y2="82" class="edge" marker-end="url(#p1)"/>
-        <rect x="502" y="60" width="130" height="44" rx="6" class="node acc"/><text x="567" y="80" class="nodelbl">Handlers</text><text x="567" y="96" class="sub" text-anchor="middle">by directive tag</text>
-        <line x1="632" y1="82" x2="662" y2="82" class="edge" marker-end="url(#p1)"/>
-        <rect x="664" y="60" width="130" height="44" rx="6" class="node acc"/><text x="729" y="80" class="nodelbl">PostStages</text><text x="729" y="96" class="sub" text-anchor="middle">media, search</text>
-        <line x1="794" y1="82" x2="824" y2="82" class="edge" marker-end="url(#p1)"/>
-        <rect x="826" y="60" width="120" height="44" rx="6" class="node pass"/><text x="886" y="87" class="nodelbl">local.put</text>
-        <path d="M 567 104 C 567 160, 300 160, 260 106" class="edge faint" marker-end="url(#p1)"/>
-        <text x="420" y="152" class="sub" text-anchor="middle">follow-up directives loop back (a delete emits a tombstone post)</text>
-        <text x="16" y="186" class="sub">the four blue boxes are services MPS depends on and does not define</text>
-      </svg>
-      <figcaption>Validation runs before application, so a rejected directive leaves nothing half-applied. Deletion is not a special case.</figcaption>
-    </figure>
+    <p class="problem">Syncing notes to a server can be slow, can fail, and can become pointless when the user navigates away. Each of those usually gets its own mechanism. Here they are one: a request is an effect, and timeouts, retries and cancellation all apply to effects.</p>
     <ol class="steps">
-      <li><div><b>Open the unions from your own file.</b>
-<pre class="code"><code><span class="k">declare module</span> <span class="s">'../domain.ts'</span> {
-  <span class="k">interface</span> <span class="t">PayloadMap</span>   { pin: { <span class="k">readonly</span> targetId: <span class="t">string</span> } }
-  <span class="k">interface</span> <span class="t">DirectiveMap</span> { PinMessage: { targetId: <span class="t">string</span>; threadId: <span class="t">string</span>; by: <span class="t">string</span> } }
-}</code></pre>
+      <li><div><b>Wrap the request, and pass the signal through.</b>
+        <p><code>fromPromise</code> gives the request an <code>AbortSignal</code> and maps a rejection to a typed error. With <code>fetch</code> you would pass the signal straight to it. The playground version uses a stand-in that logs when it is aborted.</p>
+        <pre class="code" data-snippet="guide-cancellation#service"></pre>
       </div></li>
-      <li><div><b>Write the categoriser, the handler, and any stage the feature needs.</b><p>Plain functions and plain values. A stage that needs a service is a service of its own, so it can be swapped in a test and shipped by a team that owns neither MPS nor the root.</p></div></li>
-      <li><div><b>Watch the root stop compiling.</b><p><code>CategoriserTable</code> and <code>HandlerTable</code> are exhaustive over the open maps, so opening a union makes the registries incomplete. The gap cannot reach runtime.</p></div></li>
-      <li><div><b>Wire it in, in one file.</b>
-<pre class="code"><code><span class="k">export const</span> CategorisersLive = Categorisers.of({ ...coreCategorisers, pin: pinCategoriser })
-
-<span class="k">export const</span> HandlersLive = DirectiveHandlers.make(<span class="k">function*</span> () {
-  <span class="k">const</span> local = <span class="y">yield*</span> LocalStore
-  <span class="k">return</span> { ...coreHandlers(local), PinMessage: pinHandler(local) }
-})
-
-<span class="k">export const</span> PreStagesLive = PreStages.make(<span class="k">function*</span> () {
-  <span class="k">const</span> core = <span class="y">yield*</span> CoreValidation
-  <span class="k">return</span> [...core, pinPolicyStage]     <span class="c">// ordered after the built-in rules</span>
-})</code></pre>
-      <p>Adding the <code>pin</code> kind touched three files and none of them was <code>mps.ts</code>.</p></div></li>
+      <li><div><b>Add the policy around it, not inside it.</b>
+        <p><code>retry</code> runs the effect again on failure, following a schedule. <code>timeout</code> gives up after a deadline and stops whatever is still running. Both wrap the call; the service does not change.</p>
+        <pre class="code" data-snippet="guide-cancellation#policy"></pre>
+      </div></li>
+      <li><div><b>Cancel, and watch the request stop.</b>
+        <p>Interrupting a fiber aborts the signal handed to its request. The same happens when a <code>timeout</code> fires or a <code>race</code> is lost.</p>
+        <pre class="code" data-snippet="guide-cancellation#cancel"></pre>
+      </div></li>
     </ol>
+    <div class="callout"><span class="t">What you got</span>Work started by something that has given up stops too. Forked work cannot outlive what forked it, and cleanup still runs, so nothing is left half-done in the background.</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="next" class="guide">
+    <div class="head">
+      <div class="eyebrow">Next</div>
+      <h2>Where to go from here</h2>
+    </div>
+    <div class="cards">
+      <a class="card" href="workers.html"><h3>Move a service to a worker</h3><p>The same <code>yield* Notes</code>, implemented on another thread. A change to the provider list.</p><span class="go">workers.html →</span></a>
+      <a class="card" href="services.html"><h3>Services in depth</h3><p>Defaults, per-method dependencies, extension points, and every diagnostic.</p><span class="go">services.html →</span></a>
+      <a class="card" href="playground.html"><h3>Experiment</h3><p>Every guide is in the playground. Break one and read the error.</p><span class="go">playground.html →</span></a>
+    </div>
   </section>
 
   <nav class="pagenav">
     <a href="workers.html"><span class="lbl">Previous</span>← Workers</a>
-    <a href="index.html"><span class="lbl">Back to</span>Overview →</a>
+    <a href="playground.html"><span class="lbl">Next</span>Playground →</a>
   </nav>
 </main>
 </div>

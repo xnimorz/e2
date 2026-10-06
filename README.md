@@ -8,6 +8,12 @@ It runs on Bun, in the browser and in workers, with no decorators, no build step
 
 **[Documentation](https://xnimorz.github.io/e2/)** · **[Playground](https://xnimorz.github.io/e2/playground.html)**
 
+```bash
+npm install e2      # or: bun add e2
+```
+
+TypeScript 5.5 or later. Version 3 is a new library under an old name: e2 2.x was an unrelated event emitter.
+
 ## Why
 
 In most TypeScript applications those three questions are answered by convention:

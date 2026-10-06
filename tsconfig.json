@@ -1,5 +1,5 @@
 {
-  "exclude": ["src/tests/diagnostics", "prototype", "dist", "out"],
+  "exclude": ["src/tests/diagnostics", "prototype", "dist", "out", "lib"],
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext", "dom"],
@@ -14,6 +14,8 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    // Inside the repository `e2` is the source; the package's exports point at lib/.
+    "paths": { "e2": ["./src/index.ts"] },
 
     // Best practices
     "strict": true,

@@ -9,6 +9,7 @@
  */
 import { cp, mkdir, readdir, rm } from 'node:fs/promises'
 import { join, relative } from 'node:path'
+import { highlight, region, withoutRegions } from './highlight.ts'
 
 const root = join(import.meta.dir, '..')
 const docs = join(root, 'documentation')
@@ -17,6 +18,20 @@ const playground = join(out, 'playground')
 
 /** Examples in the order the playground lists them, keyed by file name. */
 const EXAMPLES = ['services', 'errors', 'lazy', 'batch', 'concurrency', 'testing'] as const
+
+/** The guides page, in order. Each is also a playground example. */
+const GUIDES = [
+  'guide-first-service',
+  'guide-wire-an-app',
+  'guide-failures',
+  'guide-testing',
+  'guide-lazy',
+  'guide-batching',
+  'guide-cancellation',
+] as const
+
+const exampleSource = (id: string): Promise<string> =>
+  Bun.file(join(docs, 'playground', 'examples', `${id}.ts`)).text()
 
 const fail = (what: string, logs: readonly unknown[]): never => {
   for (const log of logs) console.error(log)
@@ -31,11 +46,35 @@ async function bundle(
   if (!result.success) fail(what, result.logs)
 }
 
+const unescape = (html: string): string =>
+  html.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&amp;', '&')
+
+/**
+ * Fills code blocks at build time, so the code on a page is code that runs:
+ *
+ *   <pre class="code" data-snippet="guide-lazy#memo"></pre>   a region of a playground example
+ *   <pre class="code" data-highlight>const a = 1</pre>         inline code, highlighted
+ */
+async function render(html: string, page: string): Promise<string> {
+  const snippets = [...html.matchAll(/<pre class="code" data-snippet="([\w-]+)#([\w-]+)"><\/pre>/g)]
+  for (const [block, id, name] of snippets) {
+    const code = region(await exampleSource(id!), name!, `${id}.ts`)
+    html = html.replace(block, `<pre class="code"><code>${highlight(code)}</code></pre>`)
+  }
+  html = html.replace(
+    /<pre class="code" data-highlight>([\s\S]*?)<\/pre>/g,
+    (_, code: string) => `<pre class="code"><code>${highlight(unescape(code))}</code></pre>`
+  )
+  if (html.includes('data-snippet=')) throw new Error(`site: ${page} has a malformed data-snippet block`)
+  return html
+}
+
 async function pages(): Promise<void> {
   await mkdir(out, { recursive: true })
   for (const entry of await readdir(docs, { withFileTypes: true })) {
     if (entry.isFile() && entry.name.endsWith('.html')) {
-      await cp(join(docs, entry.name), join(out, entry.name))
+      const html = await Bun.file(join(docs, entry.name)).text()
+      await Bun.write(join(out, entry.name), await render(html, entry.name))
     }
   }
   await cp(join(docs, 'assets'), join(out, 'assets'), { recursive: true })
@@ -66,12 +105,16 @@ async function librarySources(): Promise<void> {
 
 /** Each example's title is its first comment line, up to the colon. */
 async function examples(): Promise<void> {
+  const entries = [
+    ...EXAMPLES.map((id) => ({ id, group: 'Examples', prefix: '' })),
+    ...GUIDES.map((id, index) => ({ id, group: 'Guides', prefix: `${index + 1}. ` })),
+  ]
   const list = await Promise.all(
-    EXAMPLES.map(async (id) => {
-      const code = await Bun.file(join(docs, 'playground', 'examples', `${id}.ts`)).text()
+    entries.map(async ({ id, group, prefix }) => {
+      const code = withoutRegions(await exampleSource(id))
       const title = /^\/\/ ([^:\n]+):/.exec(code)?.[1]
       if (title === undefined) throw new Error(`site: examples/${id}.ts needs a "// Title: …" first line`)
-      return { id, title, code }
+      return { id, group, title: `${prefix}${title}`, code }
     })
   )
   await Bun.write(join(playground, 'examples.json'), JSON.stringify(list))

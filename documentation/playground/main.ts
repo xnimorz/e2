@@ -22,6 +22,7 @@ import {
 
 interface Example {
   readonly id: string
+  readonly group: string
   readonly title: string
   readonly code: string
 }
@@ -336,7 +337,17 @@ const start = async (): Promise<void> => {
   setStatus('Loading…', 'running')
   const [loaded] = await Promise.all([fetch(asset('examples.json')).then((response) => response.json()), loadLibrary()])
   examples = loaded as readonly Example[]
-  ui.examples.replaceChildren(...examples.map((example) => new Option(example.title, example.id)))
+  const groups = new Map<string, HTMLOptGroupElement>()
+  for (const example of examples) {
+    let group = groups.get(example.group)
+    if (group === undefined) {
+      group = document.createElement('optgroup')
+      group.label = example.group
+      groups.set(example.group, group)
+    }
+    group.append(new Option(example.title, example.id))
+  }
+  ui.examples.replaceChildren(...groups.values())
   if (location.hash.startsWith('#code=')) ui.examples.append(new Option('Shared code', SHARED))
 
   const first = examples[0]

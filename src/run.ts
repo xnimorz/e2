@@ -1,3 +1,6 @@
+// `Runtime` implements `AsyncDisposable`. Preserved into the declarations so a
+// consumer whose `lib` stops short of ESNext still knows `Symbol.asyncDispose`.
+/// <reference lib="esnext.disposable" preserve="true" />
 import { Die, squash, type Exit } from './cause.ts'
 import { Cell } from './cell.ts'
 import { DuplicateProvider, ProviderFailed } from './errors.ts'

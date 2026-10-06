@@ -147,7 +147,7 @@ export const all = <const Effects extends readonly AnyFx[]>(
       : never,
   [Effects[number]] extends [never]
     ? never
-    : Effects[number] extends Fx<any, any, infer Dependency>
+    : Effects[number] extends Fx<any, any, infer Dependency extends string>
       ? Dependency
       : never
 > =>

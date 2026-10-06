@@ -1,0 +1,21 @@
+{
+  // Emits the published package into lib/: JavaScript, declarations, and maps
+  // back to src/, which is published alongside so go-to-definition lands on
+  // real source.
+  "extends": "./tsconfig.json",
+  "include": ["src"],
+  "exclude": ["src/tests"],
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "allowJs": false,
+    "rootDir": "src",
+    "outDir": "lib",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "target": "ES2022",
+    "paths": {}
+  }
+}

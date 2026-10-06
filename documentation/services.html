@@ -214,8 +214,22 @@ rt.graph()                 <span class="c">// { Mps: { status: 'empty', lazy: tr
     </div>
     <div class="prose">
       <p>A module that wants to be extended defines the key and depends on it, and defines no provider. Whoever composes the application supplies one. There is no separate concept for this: it is <code>service&lt;Api&gt;()</code> like everything else, and the provider is one more entry in the list.</p>
-      <p>A message pipeline is a good example. It depends on <code>PreStages</code>, <code>PostStages</code>, <code>Categorisers</code> and <code>DirectiveHandlers</code> and defines none of them. A feature adds a message kind by merging into the domain's open interfaces, and because the registries are exhaustive over those interfaces, forgetting to wire the feature in at the root is a compile error. The <a href="guides.html#extend">guide</a> walks through it.</p>
+      <p>For example, an export feature can support any number of formats without knowing them. It asks for <code>Formats</code>; the application decides which exist. If the root forgets to supply them, the list does not compile.</p>
     </div>
+<pre class="code" data-highlight>// In the export module: depend on the formats, define none.
+interface Formats {
+  readonly [name: string]: (notes: readonly Note[]) =&gt; string
+}
+const Formats = service&lt;Formats&gt;()('Formats')
+
+const ExportLive = Export.make(function* () {
+  const formats = yield* Formats
+  return { as: (format, notes) =&gt; sync(() =&gt; formats[format]?.(notes) ?? '') }
+})
+
+// At the composition root: whoever builds the app decides.
+const FormatsLive = Formats.of({ markdown: toMarkdown, csv: toCsv })
+await runtime([ExportLive, FormatsLive, /* … */])</pre>
   </section>
 
   <!-- ============================================================ -->

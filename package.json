@@ -1,11 +1,41 @@
 {
   "name": "e2",
-  "version": "0.0.0",
-  "type": "module",
-  "module": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts"
+  "version": "3.0.0",
+  "description": "Typed dependency injection and structured control flow for TypeScript",
+  "keywords": [
+    "typescript",
+    "dependency-injection",
+    "di",
+    "effect",
+    "effects",
+    "structured-concurrency",
+    "cancellation",
+    "result",
+    "generators"
+  ],
+  "license": "MIT",
+  "author": "Nikita Mostovoy <xnimor@ya.ru>",
+  "homepage": "https://xnimorz.github.io/e2/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xnimorz/e2.git"
   },
+  "bugs": "https://github.com/xnimorz/e2/issues",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "!src/tests"
+  ],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -14,7 +44,10 @@
     "build:browser": "bun build src/index.ts --target=browser --outdir dist",
     "smoke:browser": "bun build src/tests/browser/entry.ts --target=browser --format=iife --outfile dist/e2-smoke.js && echo \"open dist/smoke.html in a browser\"",
     "site": "bun scripts/build-site.ts",
-    "site:serve": "bun scripts/build-site.ts --serve"
+    "site:serve": "bun scripts/build-site.ts --serve",
+    "build:lib": "bun scripts/build-lib.ts",
+    "prepack": "bun scripts/build-lib.ts",
+    "release": "bun scripts/release.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -26,5 +59,10 @@
   },
   "peerDependencies": {
     "typescript": ">=5.5"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   }
 }
