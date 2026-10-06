@@ -1,6 +1,6 @@
 {
   "name": "eslint-plugin-e2",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "ESLint rules for e2: catch effects that are built and never run",
   "keywords": [
     "eslint",

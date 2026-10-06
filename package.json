@@ -1,6 +1,6 @@
 {
   "name": "e2",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Typed dependency injection and structured control flow for TypeScript",
   "keywords": [
     "typescript",
