@@ -1,5 +1,5 @@
 import parser from '@typescript-eslint/parser'
-import e2 from './packages/eslint-plugin-e2/src/index.ts'
+import e2 from './packages/eslint-plugin-xnim-e2/src/index.ts'
 
 export default [
   {

@@ -44,7 +44,10 @@ import { release } from './program.ts'
 
 const PACKAGES: readonly Package[] = [
   { name: 'e2', dir: '/repo' },
-  { name: 'eslint-plugin-e2', dir: '/repo/packages/eslint-plugin-e2' },
+  {
+    name: 'eslint-plugin-xnim-e2',
+    dir: '/repo/packages/eslint-plugin-xnim-e2',
+  },
 ]
 const FILES = [
   'package.json',
@@ -185,7 +188,7 @@ describe('bun run release', () => {
     expect(did.confirmed).toHaveLength(1)
     expect(did.published.map((entry) => entry.tarball)).toEqual([
       '/out/e2.tgz',
-      '/out/eslint-plugin-e2.tgz',
+      '/out/eslint-plugin-xnim-e2.tgz',
     ])
     expect(did.published.every((entry) => !entry.dryRun)).toBe(true)
     expect(did.pushed).toEqual(['v3.0.0'])
@@ -213,15 +216,20 @@ describe('bun run release', () => {
     [{ behind: true }, 'HEAD is not origin/master; push or pull first'],
     [{ tagTaken: true }, 'tag v3.0.0 already exists'],
     [
-      { versions: { 'eslint-plugin-e2': '3.0.1' } },
-      'versions differ: e2@3.0.0, eslint-plugin-e2@3.0.1',
+      { versions: { 'eslint-plugin-xnim-e2': '3.0.1' } },
+      'versions differ: e2@3.0.0, eslint-plugin-xnim-e2@3.0.1',
     ],
     [
-      { versions: { e2: '3.1.0-beta.1', 'eslint-plugin-e2': '3.1.0-beta.1' } },
+      {
+        versions: {
+          e2: '3.1.0-beta.1',
+          'eslint-plugin-xnim-e2': '3.1.0-beta.1',
+        },
+      },
       'a prerelease must be published with --tag, not as latest',
     ],
     [
-      { published: ['e2', 'eslint-plugin-e2'] },
+      { published: ['e2', 'eslint-plugin-xnim-e2'] },
       'every package is already published at 3.0.0',
     ],
   ] satisfies [World, string][])(
@@ -242,7 +250,7 @@ describe('bun run release', () => {
   test('a prerelease may go out under another dist-tag', async () => {
     const { did, result } = publishing({
       distTag: 'next',
-      versions: { e2: '3.1.0-beta.1', 'eslint-plugin-e2': '3.1.0-beta.1' },
+      versions: { e2: '3.1.0-beta.1', 'eslint-plugin-xnim-e2': '3.1.0-beta.1' },
     })
     expect((await result).ok).toBe(true)
     expect(did.pushed).toEqual(['v3.1.0-beta.1'])
@@ -263,7 +271,7 @@ describe('bun run release', () => {
     const { did, result } = publishing({ published: ['e2'] })
     expect((await result).ok).toBe(true)
     expect(did.published.map((entry) => entry.tarball)).toEqual([
-      '/out/eslint-plugin-e2.tgz',
+      '/out/eslint-plugin-xnim-e2.tgz',
     ])
     expect(did.log).toContain('e2@3.0.0 is already on npm; skipping it')
   })

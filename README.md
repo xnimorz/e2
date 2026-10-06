@@ -163,7 +163,7 @@ An `Fx` is a description, so building one and not running it does nothing, silen
 | `await someFx` | **lint** |
 | `[...someFx]`, `Promise.all([someFx])` | **lint** |
 
-The last four are out of the type system's reach. [`eslint-plugin-e2`](packages/eslint-plugin-e2) (`npm install --save-dev eslint-plugin-e2`) covers them with `no-floating-fx`, which is exact because the brand is: it recognises an effect without resolving the e2 module. It deliberately does **not** flag a discarded `Result`, which is eager — by the time you hold one, the work has happened.
+The last four are out of the type system's reach. [`eslint-plugin-xnim-e2`](packages/eslint-plugin-xnim-e2) (`npm install --save-dev eslint-plugin-xnim-e2`) covers them with `no-floating-fx`, which is exact because the brand is: it recognises an effect without resolving the e2 module. It deliberately does **not** flag a discarded `Result`, which is eager — by the time you hold one, the work has happened.
 
 ## Limitations
 
@@ -197,14 +197,14 @@ bun install
 bun run check          # typecheck + lint + tests
 bun run smoke:browser  # build dist/e2-smoke.js, then open dist/smoke.html
 bun run site:serve     # build the documentation and playground into out/site, and serve them
-bun run build          # compile e2 and eslint-plugin-e2 into their lib/ directories
+bun run build          # compile e2 and eslint-plugin-xnim-e2 into their lib/ directories
 ```
 
 The site is published to GitHub Pages on every push to `master`.
 
 ### Releasing
 
-`e2` and `eslint-plugin-e2` are released together, at one version. Set the same `version` in both `package.json` files, commit and push, then:
+`e2` and `eslint-plugin-xnim-e2` are released together, at one version. Set the same `version` in both `package.json` files, commit and push, then:
 
 ```bash
 bun run release --dry-run   # check, build, pack, and verify the tarballs in a scratch project

@@ -20,7 +20,10 @@ const root = join(import.meta.dir, '..')
 /** Released together, at one version. */
 export const PACKAGES: readonly Package[] = [
   { name: 'e2', dir: root },
-  { name: 'eslint-plugin-e2', dir: join(root, 'packages', 'eslint-plugin-e2') },
+  {
+    name: 'eslint-plugin-xnim-e2',
+    dir: join(root, 'packages', 'eslint-plugin-xnim-e2'),
+  },
 ]
 
 // `rewriteRelativeImportExtensions` rewrites `./fx.ts` to `./fx.js` in the

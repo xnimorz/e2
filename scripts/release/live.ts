@@ -380,7 +380,7 @@ if (!result.ok || result.value !== 2) throw new Error('unexpected result: ' + JS
 `
 
 const ESLINT_CONFIG = `import parser from '@typescript-eslint/parser'
-import e2 from 'eslint-plugin-e2'
+import e2 from 'eslint-plugin-xnim-e2'
 export default [{
   files: ['**/*.ts'],
   languageOptions: { parser, parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
@@ -532,26 +532,26 @@ export const VerifierLive = Verifier.make(function* () {
             []
           if (messages('ok.ts').length > 0)
             return yield* fail(
-              `eslint-plugin-e2 reported a clean file:\n${JSON.stringify(messages('ok.ts'))}`
+              `eslint-plugin-xnim-e2 reported a clean file:\n${JSON.stringify(messages('ok.ts'))}`
             )
           if (
             !messages('floating.ts').some(
               (message) => message.ruleId === 'e2/no-floating-fx'
             )
           ) {
-            return yield* fail('eslint-plugin-e2 missed a floating effect')
+            return yield* fail('eslint-plugin-xnim-e2 missed a floating effect')
           }
           const reported = (yield* inScratch([
             'node',
             '-e',
-            "import('eslint-plugin-e2').then((m) => console.log(m.default.meta.version))",
+            "import('eslint-plugin-xnim-e2').then((m) => console.log(m.default.meta.version))",
           ])).stdout
           if (reported !== version)
             return yield* fail(
-              `eslint-plugin-e2 reports version ${reported}, expected ${version}`
+              `eslint-plugin-xnim-e2 reports version ${reported}, expected ${version}`
             )
           yield* log.info(
-            'eslint-plugin-e2: flags a dropped effect, passes a clean file'
+            'eslint-plugin-xnim-e2: flags a dropped effect, passes a clean file'
           )
         })
       ),
