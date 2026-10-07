@@ -1,6 +1,6 @@
 {
   "name": "e2",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Typed dependency injection and structured control flow for TypeScript",
   "keywords": [
     "typescript",
@@ -39,8 +39,9 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src packages examples scripts",
+    "lint": "eslint src packages examples scripts bench",
     "check": "bun run typecheck && bun run lint && bun test",
+    "bench": "bun bench/interpreter.bench.ts",
     "smoke:browser": "bun build src/tests/browser/entry.ts --target=browser --format=iife --outfile dist/e2-smoke.js && echo \"open dist/smoke.html in a browser\"",
     "site": "bun scripts/build-site.ts",
     "site:serve": "bun scripts/build-site.ts --serve",

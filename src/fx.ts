@@ -102,16 +102,25 @@ export class Gen<out Value, out Error, out Dependency extends string>
  * delegation for V8 to re-walk on every `next()`.
  */
 export class SingleShot<Node> {
+  done = false
+  value: unknown
   private used = false
 
-  constructor(private readonly node: Node) {}
+  constructor(node: Node) {
+    this.value = node
+  }
 
   next(...args: ReadonlyArray<any>): IteratorResult<Node, any> {
+    // The iterator is its own result. `yield*` reads `done` and `value` off a
+    // result before it calls `next` again, so handing back the same object,
+    // updated, saves the two result objects every `yield*` used to allocate.
     if (this.used) {
-      return { done: true, value: args[0] }
+      this.done = true
+      this.value = args[0]
+    } else {
+      this.used = true
     }
-    this.used = true
-    return { done: false, value: this.node }
+    return this as IteratorResult<Node, any>
   }
 }
 

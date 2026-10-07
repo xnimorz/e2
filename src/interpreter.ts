@@ -42,13 +42,32 @@ type Instruction =
   | Raise<unknown, unknown, never>
   | Service<string, unknown>
 
-type Step =
-  | { readonly service: 'run'; readonly node: AnyFx }
-  | { readonly service: 'ok'; readonly value: unknown }
-  | { readonly service: 'fail'; readonly cause: AnyCause }
+/**
+ * What the drive loop does next.
+ *
+ * `RUN` reduces `fiber.current`. `OK` threads `out` as a success value through
+ * the frames; `FAIL` unwinds with `out` as the cause. These were `Step` objects,
+ * one allocated per instruction - on a sync run, a measurable share of the
+ * total - so the kind is a small integer and the payload travels separately.
+ */
+const RUN = 0
+const OK = 1
+const FAIL = 2
+type Mode = typeof RUN | typeof OK | typeof FAIL
+
+/**
+ * The payload of the `Mode` that `reduce`, `park` or `propagate` just
+ * returned: a value for `OK`, a cause for `FAIL`.
+ *
+ * A register rather than a return value, so that returning one costs nothing.
+ * Each writer assigns it as its very last act, after any user code that might
+ * re-enter the interpreter, and `drive` reads it straight back - so a nested
+ * run can never leave its payload for the outer one to pick up.
+ */
+let out: unknown
 
 /** Returned by `reduce` when the fiber has parked on an async operation. */
-const PARKED = Symbol('e2/parked')
+const PARKED = 3
 const RUNNING = Symbol('e2/running')
 
 /**
@@ -59,13 +78,6 @@ const RUNNING = Symbol('e2/running')
  */
 const STEP_BUDGET = 2048
 
-interface Driver {
-  readonly allowAsync: boolean
-  steps: number
-}
-
-const drivers = new WeakMap<Fiber, Driver>()
-
 /**
  * Drives a fiber until it settles or parks.
  *
@@ -74,13 +86,12 @@ const drivers = new WeakMap<Fiber, Driver>()
  * handler. Nothing recurses, so effect depth is bounded by heap rather than by
  * the JS call stack.
  */
-function drive(fiber: Fiber, initial: Step): void {
-  const driver = drivers.get(fiber)
-  if (driver === undefined) {
+function drive(fiber: Fiber, initial: Mode, payload: unknown): void {
+  if (!fiber.started) {
     return
   }
 
-  let step = initial
+  let mode = initial
 
   while (true) {
     if (fiber.state === 'done') {
@@ -91,86 +102,70 @@ function drive(fiber: Fiber, initial: Step): void {
     // frames are NOT discarded here: unwinding has to walk them so that
     // `scoped`, `ensuring` and generator `finally` blocks get their chance to
     // run. Only handlers marked `all` will actually catch an interrupt.
-    if (fiber.interrupted && !interruptDelivered.has(fiber) && step.service !== 'fail') {
-      interruptDelivered.add(fiber)
-      step = {
-        service: 'fail',
-        cause: new Interrupt(String(fiber.signal.reason ?? 'interrupted')),
-      }
+    if (fiber.interrupted && !fiber.interruptDelivered && mode !== FAIL) {
+      fiber.interruptDelivered = true
+      mode = FAIL
+      payload = new Interrupt(String(fiber.signal.reason ?? 'interrupted'))
     }
 
-    if (driver.allowAsync && ++driver.steps >= STEP_BUDGET) {
-      driver.steps = 0
-      const resumeAt = step
-      queueMicrotask(() => drive(fiber, resumeAt))
+    if (fiber.allowAsync && ++fiber.steps >= STEP_BUDGET) {
+      fiber.steps = 0
+      const resumeMode = mode
+      const resumePayload = payload
+      queueMicrotask(() => drive(fiber, resumeMode, resumePayload))
       return
     }
 
-    if (step.service === 'run') {
-      const reduced = reduce(fiber, step.node as Instruction, driver.allowAsync)
+    if (mode === RUN) {
+      const reduced = reduce(fiber, fiber.current as Instruction, fiber.allowAsync)
       if (reduced === PARKED) {
         return
       }
-      step = reduced
+      mode = reduced
+      payload = out
       continue
     }
 
-    if (step.service === 'ok') {
-      const next = propagate(fiber, step.value)
-      if (next === RUNNING) {
-        step = { service: 'run', node: fiber.current as AnyFx }
+    if (mode === OK) {
+      const next = propagate(fiber, payload)
+      if (next === RUN) {
+        mode = RUN
         continue
       }
-      if (next.service === 'settled') {
-        const finished = complete(fiber, ok(next.value))
-        if (finished === RUNNING) {
-          step = { service: 'run', node: fiber.current as AnyFx }
+      if (next === OK) {
+        if (complete(fiber, ok(out)) === RUNNING) {
+          mode = RUN
           continue
         }
         return
       }
-      step = { service: 'fail', cause: next.cause }
+      mode = FAIL
+      payload = out
       continue
     }
 
-    const handler = fiber.unwindToHandler(step.cause)
+    const cause = payload as AnyCause
+    const handler = fiber.unwindToHandler(cause)
     if (handler == null) {
-      const finished = complete(fiber, err(step.cause))
-      if (finished === RUNNING) {
-        step = { service: 'run', node: fiber.current as AnyFx }
+      if (complete(fiber, err(cause)) === RUNNING) {
+        mode = RUN
         continue
       }
       return
     }
 
     try {
-      const recovered = handler.all
-        ? handler.apply(step.cause)
-        : handler.apply((step.cause as Fail<unknown>).error)
-      step = { service: 'run', node: recovered }
+      fiber.current = handler.all
+        ? handler.apply(cause)
+        : handler.apply((cause as Fail<unknown>).error)
+      mode = RUN
     } catch (thrown) {
-      step = { service: 'fail', cause: new Die(thrown) }
+      payload = new Die(thrown)
     }
   }
 }
 
 // --- finalization ----------------------------------------------------------
-
-const finalizing = new WeakSet<Fiber>()
-
-/**
- * Fibers that have already been told they are interrupted.
- *
- * Interruption is delivered exactly once. Everything that runs afterwards -
- * scope finalizers, `ensuring` handlers, a generator's `finally` - runs to
- * completion rather than being re-interrupted on its next instruction. The
- * cost is that a finalizer which hangs cannot itself be cancelled; the
- * alternative is cleanup that silently never happens, which is worse.
- */
-const interruptDelivered = new WeakSet<Fiber>()
-const pendingExits = new WeakMap<Fiber, Exit<unknown, unknown>>()
-
-const isFinalizing = (fiber: Fiber): boolean => finalizing.has(fiber)
 
 /**
  * Runs the fiber's finalization, then settles it.
@@ -184,19 +179,18 @@ function complete(
   fiber: Fiber,
   exit: Exit<unknown, unknown>
 ): typeof RUNNING | undefined {
-  if (isFinalizing(fiber)) {
-    fiber.settle(pendingExits.get(fiber) ?? exit)
+  if (fiber.finalizing) {
+    fiber.settle(fiber.pendingExit ?? exit)
     return undefined
   }
 
-  const nothingToDo = fiber.children.size === 0 && fiber.scope.size === 0
-  if (nothingToDo) {
+  if (!fiber.hasFinalization) {
     fiber.settle(exit)
     return undefined
   }
 
-  finalizing.add(fiber)
-  pendingExits.set(fiber, exit)
+  fiber.finalizing = true
+  fiber.pendingExit = exit
   fiber.stack.length = 0
   fiber.current = new Suspend(() => finalizeEffect(fiber, exit))
   return RUNNING
@@ -230,32 +224,39 @@ function finalizeEffect(fiber: Fiber, exit: Exit<unknown, unknown>): AnyFx {
 
 // --- reduction -------------------------------------------------------------
 
-function reduce(
-  fiber: Fiber,
-  node: Instruction,
-  allowAsync: boolean
-): Step | typeof PARKED {
+/** Sets `out` and returns `FAIL`, for the many places a reduction dies. */
+function die(thrown: unknown): typeof FAIL {
+  out = new Die(thrown)
+  return FAIL
+}
+
+function reduce(fiber: Fiber, node: Instruction, allowAsync: boolean): Mode | typeof PARKED {
   switch (node._tag) {
     case 'Ok':
-      return { service: 'ok', value: node.value }
+      out = node.value
+      return OK
 
     case 'Err':
-      return { service: 'fail', cause: new Fail(node.error) }
+      out = new Fail(node.error)
+      return FAIL
 
     case 'Raise':
-      return { service: 'fail', cause: node.cause as AnyCause }
+      out = node.cause
+      return FAIL
 
     case 'Sync':
       try {
-        return { service: 'ok', value: node.run() }
+        out = node.run()
+        return OK
       } catch (thrown) {
-        return { service: 'fail', cause: new Die(thrown) }
+        return die(thrown)
       }
 
     case 'Service': {
       const found = fiber.services.lookup(node.id)
       if (found !== NOT_FOUND) {
-        return { service: 'ok', value: found }
+        out = found
+        return OK
       }
       // Not built yet: hand the instruction to the provider's cell, which
       // builds it on this demand or joins a build already in flight.
@@ -263,30 +264,35 @@ function reduce(
       if (cell == null) {
         // The types already proved this service was provided, so reaching
         // here means the graph was assembled dynamically. That is a defect.
-        return { service: 'fail', cause: new Die(new MissingProvider(node.id)) }
+        return die(new MissingProvider(node.id))
       }
       try {
-        fiber.current = cell.demand(fiber)
-        return { service: 'run', node: fiber.current }
+        const built = cell.built(fiber)
+        if (built !== NOT_FOUND) {
+          out = built
+          return OK
+        }
+        fiber.current = cell.join(fiber)
+        return RUN
       } catch (thrown) {
-        return { service: 'fail', cause: new Die(thrown) }
+        return die(thrown)
       }
     }
 
     case 'Suspend':
       try {
         fiber.current = node.make()
-        return { service: 'run', node: fiber.current }
+        return RUN
       } catch (thrown) {
-        return { service: 'fail', cause: new Die(thrown) }
+        return die(thrown)
       }
 
     case 'WithFiber':
       try {
         fiber.current = node.use(fiber)
-        return { service: 'run', node: fiber.current }
+        return RUN
       } catch (thrown) {
-        return { service: 'fail', cause: new Die(thrown) }
+        return die(thrown)
       }
 
     case 'Gen':
@@ -294,24 +300,25 @@ function reduce(
         // A fresh generator per reduction: generator objects are single-use.
         fiber.stack.push(genFrame(node.body() as Iterator<unknown, unknown, unknown>))
       } catch (thrown) {
-        return { service: 'fail', cause: new Die(thrown) }
+        return die(thrown)
       }
-      return { service: 'ok', value: undefined }
+      out = undefined
+      return OK
 
     case 'Transform':
       fiber.stack.push(transformFrame(node.transform))
       fiber.current = node.source
-      return { service: 'run', node: node.source }
+      return RUN
 
     case 'Chain':
       fiber.stack.push(chainFrame(node.transform))
       fiber.current = node.source
-      return { service: 'run', node: node.source }
+      return RUN
 
     case 'Recover':
       fiber.stack.push(recoverFrame(node.recover, node.all))
       fiber.current = node.source
-      return { service: 'run', node: node.source }
+      return RUN
 
     case 'WithServices':
       fiber.stack.push(servicesFrame(fiber.services))
@@ -319,18 +326,15 @@ function reduce(
         node.overrides as readonly (readonly [Service<string, unknown>, unknown])[]
       )
       fiber.current = node.source
-      return { service: 'run', node: node.source }
+      return RUN
 
     case 'Async':
       return park(fiber, node, allowAsync)
 
     default:
-      return {
-        service: 'fail',
-        cause: new Die(
-          new Error(`e2: unknown instruction ${String((node as { _tag?: unknown })._tag)}`)
-        ),
-      }
+      return die(
+        new Error(`e2: unknown instruction ${String((node as { _tag?: unknown })._tag)}`)
+      )
   }
 }
 
@@ -346,10 +350,10 @@ function park(
   fiber: Fiber,
   node: Async<unknown, unknown>,
   allowAsync: boolean
-): Step | typeof PARKED {
+): Mode | typeof PARKED {
   if (!allowAsync) {
     // Not unwound: finalizers still deserve to run before this surfaces.
-    return { service: 'fail', cause: new Die(new AsyncBoundary()) }
+    return die(new AsyncBoundary())
   }
 
   let done = false
@@ -361,17 +365,14 @@ function park(
       return
     }
     done = true
-    interruptDelivered.add(fiber)
+    fiber.interruptDelivered = true
     try {
       cleanup?.()
     } catch {
       // A failing cleanup must not mask the interruption.
     }
     fiber.state = 'running'
-    drive(fiber, {
-      service: 'fail',
-      cause: new Interrupt(String(fiber.signal.reason ?? 'interrupted')),
-    })
+    drive(fiber, FAIL, new Interrupt(String(fiber.signal.reason ?? 'interrupted')))
   }
 
   const resume = (result: AnyFx): void => {
@@ -382,7 +383,8 @@ function park(
     fiber.signal.removeEventListener('abort', onAbort)
     if (fiber.state === 'suspended') {
       fiber.state = 'running'
-      drive(fiber, { service: 'run', node: result })
+      fiber.current = result
+      drive(fiber, RUN, undefined)
     } else {
       immediate = result
     }
@@ -392,11 +394,12 @@ function park(
     cleanup = node.register(resume as (result: AnyFx) => void, fiber.signal) ?? undefined
   } catch (thrown) {
     done = true
-    return { service: 'fail', cause: new Die(thrown) }
+    return die(thrown)
   }
 
   if (immediate != null) {
-    return { service: 'run', node: immediate }
+    fiber.current = immediate
+    return RUN
   }
   if (done) {
     // Resumed synchronously with a value we already consumed, or aborted.
@@ -405,7 +408,7 @@ function park(
 
   // Once interruption has been delivered the signal is spent: work parked
   // during cleanup must be allowed to finish.
-  if (!interruptDelivered.has(fiber)) {
+  if (!fiber.interruptDelivered) {
     if (fiber.signal.aborted) {
       onAbort()
       return PARKED
@@ -419,20 +422,19 @@ function park(
 
 // --- propagation -----------------------------------------------------------
 
-type Propagated =
-  | typeof RUNNING
-  | { readonly service: 'settled'; readonly value: unknown }
-  | { readonly service: 'failed'; readonly cause: AnyCause }
-
 /**
  * Threads a success value out through the continuation frames.
+ *
+ * Returns `RUN` when a frame produced the next instruction (now in
+ * `fiber.current`), `OK` when the stack emptied with the final value in `out`,
+ * or `FAIL` with the cause in `out`.
  *
  * Generator frames are peeked rather than popped, because a generator that is
  * not done stays on the stack to receive the next value. That is what keeps
  * native `yield*` delegation depth at one: the interpreter, not the engine,
  * holds the chain.
  */
-function propagate(fiber: Fiber, initial: unknown): Propagated {
+function propagate(fiber: Fiber, initial: unknown): Mode {
   let value = initial
 
   while (fiber.stack.length > 0) {
@@ -446,7 +448,7 @@ function propagate(fiber: Fiber, initial: unknown): Propagated {
         progress = frame.iterator.next(value)
       } catch (thrown) {
         fiber.stack.pop()
-        return { service: 'failed', cause: new Die(thrown) }
+        return die(thrown)
       }
       if (progress.done === true) {
         fiber.stack.pop()
@@ -454,7 +456,7 @@ function propagate(fiber: Fiber, initial: unknown): Propagated {
         continue
       }
       fiber.current = progress.value as AnyFx
-      return RUNNING
+      return RUN
     }
 
     fiber.stack.pop()
@@ -464,7 +466,7 @@ function propagate(fiber: Fiber, initial: unknown): Propagated {
         try {
           value = frame.apply(value)
         } catch (thrown) {
-          return { service: 'failed', cause: new Die(thrown) }
+          return die(thrown)
         }
         continue
 
@@ -472,9 +474,9 @@ function propagate(fiber: Fiber, initial: unknown): Propagated {
         try {
           fiber.current = frame.apply(value)
         } catch (thrown) {
-          return { service: 'failed', cause: new Die(thrown) }
+          return die(thrown)
         }
-        return RUNNING
+        return RUN
 
       case 'recover':
         continue
@@ -485,25 +487,28 @@ function propagate(fiber: Fiber, initial: unknown): Propagated {
     }
   }
 
-  return { service: 'settled', value }
+  out = value
+  return OK
 }
 
 // --- entry points ----------------------------------------------------------
 
 /** Whether the fiber may park. A fiber nobody has started yet may. */
 export function asyncAllowed(fiber: Fiber): boolean {
-  return drivers.get(fiber)?.allowAsync ?? true
+  return fiber.allowAsync
 }
 
 /** Starts a fiber. Returns once it settles or parks. */
 export function start(fiber: Fiber, allowAsync: boolean): void {
-  drivers.set(fiber, { allowAsync, steps: 0 })
+  fiber.started = true
+  fiber.allowAsync = allowAsync
+  fiber.steps = 0
   const first = fiber.current
   if (first == null) {
     fiber.settle(err(new Die(new Error('e2: started a fiber with no instruction'))))
     return
   }
-  drive(fiber, { service: 'run', node: first })
+  drive(fiber, RUN, undefined)
 }
 
 /** Runs an effect to completion without ever suspending. */

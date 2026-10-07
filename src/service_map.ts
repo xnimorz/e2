@@ -27,7 +27,10 @@ export type NotFound = typeof NOT_FOUND
 
 /** Something the interpreter can ask to produce a service: a cell. */
 export interface Resolvable {
-  demand(fiber: Fiber): AnyFx
+  /** The value if already built, else `NOT_FOUND`. Records the demand. */
+  built(fiber: Fiber): unknown
+  /** An effect producing the value; call after `built` has missed. */
+  join(fiber: Fiber): AnyFx
 }
 
 export class ServiceMap {

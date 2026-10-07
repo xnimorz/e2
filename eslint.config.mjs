@@ -3,7 +3,7 @@ import e2 from './packages/eslint-plugin-xnim-e2/src/index.ts'
 
 export default [
   {
-    files: ['src/**/*.ts', 'packages/**/*.ts', 'examples/**/*.ts', 'scripts/**/*.ts'],
+    files: ['src/**/*.ts', 'packages/**/*.ts', 'examples/**/*.ts', 'scripts/**/*.ts', 'bench/**/*.ts'],
     // Fixtures are meant to fail; the spike is types-only.
     ignores: ['src/tests/diagnostics/**', 'spike/**', 'dist/**', '**/lib/**'],
     languageOptions: {

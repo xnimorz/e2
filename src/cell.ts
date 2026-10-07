@@ -4,7 +4,7 @@ import { Fiber } from './fiber.ts'
 import { Async, Raise, type AnyFx } from './fx.ts'
 import { asyncAllowed, start } from './interpreter.ts'
 import { Ok } from './result.ts'
-import type { Resolvable, ServiceMap } from './service_map.ts'
+import { NOT_FOUND, type Resolvable, type ServiceMap } from './service_map.ts'
 import type { Maybe } from './types.ts'
 
 const fromExit = (exit: Exit<unknown, unknown>): AnyFx =>
@@ -64,15 +64,26 @@ export class Cell implements Resolvable {
    * of synchronous providers without ever touching an `Async` instruction.
    */
   demand(demander: Fiber): AnyFx {
+    const built = this.built(demander)
+    return built === NOT_FOUND ? this.join(demander) : new Ok(built)
+  }
+
+  /**
+   * The value, if the cell is already built. Records the demand either way.
+   *
+   * The interpreter's fast path: a `yield* Db` against a warmed runtime
+   * resolves here without building an instruction for the value.
+   */
+  built(demander: Fiber): unknown {
     const by = demander.chain[demander.chain.length - 1]
     if (by !== undefined) {
       this.observe?.(by, this.name)
     }
+    return this.state === 'done' ? this.value : NOT_FOUND
+  }
 
-    if (this.state === 'done') {
-      return new Ok(this.value)
-    }
-
+  /** The rest of `demand`, once `built` has missed. */
+  join(demander: Fiber): AnyFx {
     const at = demander.chain.indexOf(this.name)
     if (at !== -1) {
       return new Raise(

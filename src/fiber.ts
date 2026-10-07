@@ -46,12 +46,19 @@ export type FiberState = 'running' | 'suspended' | 'done'
 
 let nextFiberId = 0
 
+const NO_CHAIN: readonly string[] = Object.freeze([])
+
 /**
  * One running computation: its continuation stack, its services, its scope,
  * its cancellation signal and its children.
  *
  * Nodes are immutable and shared. Everything that changes as a program runs
  * lives here, which is what makes an effect safely re-runnable.
+ *
+ * Most fibers are synchronous and short: they never park, fork, acquire or
+ * get interrupted. So the controller, scope, children and observers are
+ * created on first use rather than in the constructor - an `AbortController`
+ * alone cost more than the rest of a one-service run put together.
  */
 export class Fiber {
   readonly id = nextFiberId++
@@ -62,11 +69,7 @@ export class Fiber {
   readonly stack: Frame[] = []
   /** Services visible to the instruction being reduced. */
   services: ServiceMap
-  /** Finalizers owned by this fiber, closed when it settles. */
-  readonly scope: Scope
 
-  readonly controller = new AbortController()
-  readonly children = new Set<Fiber>()
   parent: Maybe<Fiber>
 
   /**
@@ -77,18 +80,52 @@ export class Fiber {
    * inherited across `fork`, so a cycle that crosses a forked fiber is still
    * reported as a cycle rather than becoming a hang.
    */
-  chain: readonly string[] = []
+  chain: readonly string[] = NO_CHAIN
 
   state: FiberState = 'running'
   exit: Maybe<Exit<unknown, unknown>>
 
-  private observers: ((exit: Exit<unknown, unknown>) => void)[] = []
+  // Interpreter bookkeeping. These were side tables (a WeakMap of drivers,
+  // WeakSets for finalizing and delivered interrupts) keyed by fiber; as
+  // fields they cost nothing to read and nothing to allocate.
+  /** Set by `start`; a fiber nobody has started may still park. */
+  started = false
+  allowAsync = true
+  steps = 0
+  finalizing = false
+  /**
+   * Interruption is delivered exactly once. Everything that runs afterwards -
+   * scope finalizers, `ensuring` handlers, a generator's `finally` - runs to
+   * completion rather than being re-interrupted on its next instruction. The
+   * cost is that a finalizer which hangs cannot itself be cancelled; the
+   * alternative is cleanup that silently never happens, which is worse.
+   */
+  interruptDelivered = false
+  pendingExit: Maybe<Exit<unknown, unknown>>
+
+  private ownController: Maybe<AbortController>
+  private ownScope: Maybe<Scope>
+  private ownChildren: Maybe<Set<Fiber>>
+  private observers: Maybe<((exit: Exit<unknown, unknown>) => void)[]>
   private detach: Maybe<() => void>
 
-  constructor(start: AnyFx, services: ServiceMap, scope: Scope = new Scope()) {
+  constructor(start: AnyFx, services: ServiceMap, scope?: Scope) {
     this.current = start
     this.services = services
-    this.scope = scope
+    this.ownScope = scope
+  }
+
+  /** Finalizers owned by this fiber, closed when it settles. */
+  get scope(): Scope {
+    return (this.ownScope ??= new Scope())
+  }
+
+  get controller(): AbortController {
+    return (this.ownController ??= new AbortController())
+  }
+
+  get children(): Set<Fiber> {
+    return (this.ownChildren ??= new Set())
   }
 
   get signal(): AbortSignal {
@@ -96,7 +133,16 @@ export class Fiber {
   }
 
   get interrupted(): boolean {
-    return this.controller.signal.aborted
+    // No controller means nobody has interrupted, and nobody holds the signal.
+    return this.ownController != null && this.ownController.signal.aborted
+  }
+
+  /** Whether settling has anything to close: children to await, finalizers to run. */
+  get hasFinalization(): boolean {
+    return (
+      (this.ownChildren != null && this.ownChildren.size > 0) ||
+      (this.ownScope != null && this.ownScope.size > 0)
+    )
   }
 
   /**
@@ -147,7 +193,10 @@ export class Fiber {
     this.detach = undefined
 
     const waiting = this.observers
-    this.observers = []
+    if (waiting == null) {
+      return
+    }
+    this.observers = undefined
     for (const observe of waiting) {
       observe(exit)
     }
@@ -159,7 +208,7 @@ export class Fiber {
       observe(this.exit)
       return
     }
-    this.observers.push(observe)
+    ;(this.observers ??= []).push(observe)
   }
 
   /**

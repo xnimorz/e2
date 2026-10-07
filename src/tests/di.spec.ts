@@ -4,7 +4,7 @@ import { Gen } from '../fx.ts'
 import { acquire } from '../ops.ts'
 import { Ok } from '../result.ts'
 import { Provider, lazy } from '../provider.ts'
-import { ServiceMap, services } from '../service_map.ts'
+import { NOT_FOUND, ServiceMap, services } from '../service_map.ts'
 import { Defaulted, Service, service } from '../service.ts'
 import { assertType, type Equals } from '../types.ts'
 
@@ -101,7 +101,7 @@ describe('ServiceMap', () => {
   })
 
   test('a registered but unbuilt provider is resolvable, not has', () => {
-    const cell = { demand: () => new Ok(undefined) }
+    const cell = { built: () => NOT_FOUND, join: () => new Ok(undefined) }
     const root = ServiceMap.root(new Map([['Config', cell]]))
     expect(root.has(Config)).toBe(false)
     expect(root.resolvable('Config')).toBe(cell)

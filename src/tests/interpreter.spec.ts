@@ -3,7 +3,9 @@ import { AsyncBoundary } from '../errors.ts'
 import { Async, catchAll, flatMap, map, suspend, sync, type Fx } from '../fx.ts'
 import { fx, gen } from '../gen.ts'
 import { err, ok, type Result } from '../result.ts'
-import { runSync, runSyncExit } from '../run.ts'
+import { interpretSync } from '../interpreter.ts'
+import { runExit, runSync, runSyncExit } from '../run.ts'
+import { services } from '../service_map.ts'
 import { service } from '../service.ts'
 
 class DbError {
@@ -379,5 +381,82 @@ describe('three services, one depending on two', () => {
       id: 'stub',
       name: 'Stub',
     })
+  })
+})
+
+describe('the synchronous path allocates no cancellation machinery', () => {
+  // A one-service run used to cost ~400ns, a quarter of it the fiber's eager
+  // AbortController. Timing would flake in CI, so pin the structure instead:
+  // a run that never parks, forks or is interrupted constructs no controller.
+  // `bun run bench` has the numbers.
+  const counting = <Value>(body: () => Value): { value: Value; constructed: number } => {
+    const Original = globalThis.AbortController
+    let constructed = 0
+    globalThis.AbortController = class extends Original {
+      constructor() {
+        super()
+        constructed += 1
+      }
+    }
+    try {
+      return { value: body(), constructed }
+    } finally {
+      globalThis.AbortController = Original
+    }
+  }
+
+  interface Codec {
+    len(text: string): number
+  }
+  const Codec = service<Codec>()('Codec')
+  const measure = fx(function* (text: string) {
+    return (yield* Codec).len(text)
+  })
+
+  test('a service lookup and a nested fx construct no AbortController', () => {
+    const map = services([Codec, { len: (text: string) => text.length }])
+    const outer = gen(function* () {
+      return (yield* measure('hello')) + (yield* measure('hi'))
+    })
+    const { value, constructed } = counting(() => interpretSync(outer, map))
+    expect(value).toEqual(ok(7))
+    expect(constructed).toBe(0)
+  })
+
+  test('the signal is still there for whoever asks for it', async () => {
+    const seen = await runExit(
+      new Async<boolean, never>((resume, signal) => {
+        resume(ok(signal instanceof AbortSignal && !signal.aborted))
+        return undefined
+      }),
+      []
+    )
+    expect(seen).toEqual(ok(true))
+  })
+})
+
+describe('a run nested inside user code', () => {
+  // The drive loop hands payloads around through one module-level register.
+  // A nested run writes it too, so the outer run must not read it back late.
+  test('keeps its own value', () => {
+    const outer = gen(function* () {
+      const first = yield* sync(() => {
+        runSync(sync(() => 'inner'), [])
+        return 'outer'
+      })
+      return [first, runSync(sync(() => 'inner'), [])]
+    })
+    expect(runSyncExit(outer, [])).toEqual(ok(['outer', ok('inner')]))
+  })
+
+  test('keeps its own failure', () => {
+    const boom = new Error('boom')
+    const outer = sync((): string => {
+      runSyncExit(sync(() => 'nested'), [])
+      throw boom
+    })
+    const exit = runSyncExit(outer, [])
+    expect(exit.ok).toBe(false)
+    expect(exit.ok ? undefined : (exit.error as { defect?: unknown }).defect).toBe(boom)
   })
 })
